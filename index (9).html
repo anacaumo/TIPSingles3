@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treino de Tradução Juramentada</title>
+    <!-- Tema: aplicado antes de desenhar a página, para não piscar. Uma escolha salva vale mais do que a configuração do sistema. -->
+    <script>
+        (function () {
+            var dark = false;
+            try { dark = !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) {}
+            try { var saved = localStorage.getItem('translationPracticeTheme'); if (saved) dark = saved === 'dark'; } catch (e) {}
+            if (dark) document.documentElement.classList.add('dark');
+        })();
+    </script>
+    <!-- Estilo: usa o tailwind.js da mesma pasta se existir (funciona offline); senão, busca na internet -->
+    <script src="tailwind.js"></script>
+    <script>if (typeof tailwind === 'undefined') { document.write('<script src="https://cdn.tailwindcss.com"><\/script>'); }</script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .utterance .box { transition: all 0.2s ease; }
+        .utterance.hidden { display: none; }
+        /* tamanho da letra (controle A− / A+ no cabeçalho) */
+        .txt { font-size: calc(.875rem * var(--fs, 1)); line-height: 1.625; }
+        /* cada falante tem a sua cor no box */
+        .box.sp { background-color: var(--sp-bg); border-left: 4px solid var(--sp-bd); }
+        html.dark .box.sp { background-color: var(--sp-bgd); border-left-color: var(--sp-bdd); }
+        .utterance.active .box.sp { border-left-color: var(--sp-bd) !important; }
+        html.dark .utterance.active .box.sp { border-left-color: var(--sp-bdd) !important; }
+        .expr-mark { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 2px; }
+        html.dark .expr-mark { background: rgba(250, 204, 21, .35); }
+        .utterance.active .box {
+            background-color: #eff6ff !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.1) !important;
+        }
+
+        /* Duas colunas (inglês e português) que andam juntas: cada turno é uma linha com as duas */
+        .content-pad { padding-left: max(1.5rem, calc((100% - 80rem) / 2)); padding-right: max(1.5rem, calc((100% - 80rem) / 2)); }
+        #video-box { height: min(var(--vh, clamp(170px, 42vh, 560px)), 70vh, calc((100vw - 10rem) * 9 / 16)); }
+        /* -5s e +5s ficam dos lados do vídeo (economiza altura); no modo perguntas voltam para baixo */
+        #video-wrapper { flex-direction: row; align-items: center; gap: .75rem; }
+        #skip-row { display: contents; }
+        #skip-back-btn { order: 0; } #video-box { order: 1; } #skip-forward-btn { order: 2; }
+        #splitter { touch-action: none; }
+        /* botões no canto direito: em coluna ao lado do vídeo; no modo perguntas, em linha sobre o painel da direita */
+        #chrome-right { flex-direction: column; align-items: stretch; gap: 2px; }
+        #mode-switch { flex-direction: column; }
+        #chrome-right .sep { display: block; height: 1px; margin: 2px 6px; }
+        #chrome-right .chrome-btn { width: 100%; }
+        body[data-mode="questions"] #chrome-right { flex-direction: row; align-items: center; gap: 2px; }
+        body[data-mode="questions"] #mode-switch { flex-direction: row; }
+        body[data-mode="questions"] #chrome-right .sep { width: 1px; height: 20px; margin: 0 4px; }
+        body[data-mode="questions"] #chrome-right .chrome-btn { width: auto; }
+        @media (max-width: 899px) { main { padding-top: 2.75rem; } }
+        /* trecho da transcrição abaixo do vídeo (modo perguntas) */
+        #ctx-panel { display: none; flex-direction: column; min-height: 0; max-height: 40vh; }
+        main[data-mode="questions"] #ctx-panel.open { display: flex; }
+        .ctx-dim { opacity: .5; transition: opacity .15s; }
+        .ctx-dim:hover { opacity: .95; }
+        /* modo "só vídeo": sem transcrições nem perguntas, o vídeo ocupa a página */
+        main[data-mode="video"] #video-section { flex: 1 1 auto; justify-content: center; }
+        main[data-mode="video"] #video-box { height: min(calc(100vh - 9rem), calc((100vw - 10rem) * 9 / 16)); }
+        main[data-mode="video"] #splitter { display: none; }
+        #splitter .grip { width: 3rem; height: 4px; border-radius: 9999px; background: #cbd5e1; transition: background .15s; }
+        #splitter:hover .grip, #splitter:focus-visible .grip, #splitter.dragging .grip { background: #6366f1; }
+        html.dark #splitter .grip { background: #5f5d68; }
+        html.dark #splitter:hover .grip, html.dark #splitter:focus-visible .grip, html.dark #splitter.dragging .grip { background: #c9bfff; }
+
+        /* Modo perguntas: o vídeo volta para a esquerda e a pergunta fica à direita */
+        @media (min-width: 900px) {
+            main[data-mode="questions"] { flex-direction: row; }
+            main[data-mode="questions"] #video-section { width: 44%; min-width: 380px; align-items: stretch; justify-content: flex-start; padding: 2.25rem 1.5rem 1.5rem; overflow-y: auto; border-bottom-width: 0; border-right-width: 1px; }
+            main[data-mode="questions"] #panel { padding-top: 2.75rem; }
+            main[data-mode="questions"] #ctx-panel { flex: 1 1 0; min-height: 200px; max-height: none; }
+            main[data-mode="questions"] #video-wrapper { width: 100%; flex-direction: column; align-items: center; gap: .5rem; }
+            main[data-mode="questions"] #skip-row { display: flex; justify-content: center; gap: .75rem; order: 2; }
+            main[data-mode="questions"] #splitter { display: none; }
+            main[data-mode="questions"] #video-box { height: auto; width: 100%; }
+        }
+        .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1rem; }
+        #transcript-container.lang-en .col-pt, #transcript-container.lang-pt .col-en { display: none; }
+        #transcript-container.lang-en .cols, #transcript-container.lang-pt .cols { grid-template-columns: minmax(0, 1fr); }
+        #transcript-container.lang-pt .col-pt { border-left: 0; padding-left: 0; }
+
+        #video-box iframe { width: 100%; height: 100%; display: block; }
+        .video-msg { color: #fff; background: rgba(0, 0, 0, .88); }
+        .video-msg a { color: #a5b4fc; text-decoration: underline; }
+
+        /* ================= Tema escuro (Material 3) — o mesmo do editor =================
+           Só vale com <html class="dark">; o tema claro não é afetado. */
+        html.dark { color-scheme: dark; }
+        html.dark body { background-color: #141318; color: #e3e2e8; }
+        html.dark input:not([type=checkbox]):not([type=radio]) { background-color: #201f24; color: #e3e2e8; }
+        html.dark ::placeholder { color: #b7b4c1; opacity: 1; }
+        html.dark ::selection { background: #3d3d8e; color: #e5deff; }
+        html.dark .bg-white { background-color: #2a292e; }
+        html.dark .bg-slate-50 { background-color: #141318; }
+        html.dark .bg-slate-50\/50 { background-color: #141318; }
+        html.dark .bg-slate-100 { background-color: #201f24; }
+        html.dark .bg-slate-200 { background-color: #353439; }
+        html.dark .bg-indigo-50 { background-color: #37353f; }
+        html.dark .bg-indigo-100 { background-color: #3d3d8e; }
+        html.dark .bg-indigo-600 { background-color: #c9bfff; }
+        html.dark .bg-emerald-100 { background-color: #015236; }
+        html.dark .bg-amber-50 { background-color: #3a3534; }
+        html.dark .bg-amber-100 { background-color: #4a3a1c; }
+        html.dark .bg-rose-100 { background-color: #5b2a2c; }
+        html.dark .text-rose-800 { color: #ffb4ab; }
+        html.dark .hover\:bg-amber-200:hover { background-color: #5a4720; }
+        html.dark .hover\:bg-rose-200:hover { background-color: #6e3336; }
+        html.dark .hover\:bg-slate-50:hover { background-color: #201f24; }
+        html.dark .hover\:bg-slate-100:hover { background-color: #37363c; }
+        html.dark .hover\:bg-slate-200:hover { background-color: #37363c; }
+        html.dark .hover\:bg-slate-300:hover { background-color: #434247; }
+        html.dark .hover\:bg-indigo-50:hover { background-color: #37353f; }
+        html.dark .hover\:bg-indigo-200:hover { background-color: #4a4a97; }
+        html.dark .hover\:bg-indigo-700:hover { background-color: #bbb3f4; }
+        html.dark .hover\:bg-emerald-200:hover { background-color: #0c5f41; }
+        html.dark .text-slate-800 { color: #e3e2e8; }
+        html.dark .text-slate-700 { color: #e3e2e8; }
+        html.dark .text-slate-600 { color: #c7c5d2; }
+        html.dark .text-slate-500 { color: #c7c5d2; }
+        html.dark .text-slate-400 { color: #b7b4c1; }
+        html.dark .text-white { color: #1f2774; }
+        html.dark .text-indigo-500 { color: #c9bfff; }
+        html.dark .text-indigo-600 { color: #c9bfff; }
+        html.dark .text-indigo-700 { color: #c9bfff; }
+        html.dark .text-indigo-800 { color: #e5deff; }
+        html.dark .text-indigo-900 { color: #e5deff; }
+        html.dark .text-emerald-800 { color: #88f8c5; }
+        html.dark .text-amber-800 { color: #ffddba; }
+        html.dark .hover\:text-slate-700:hover { color: #e3e2e8; }
+        html.dark .hover\:text-indigo-900:hover { color: #e5deff; }
+        html.dark .border-slate-200 { border-color: #474550; }
+        html.dark .border-slate-300 { border-color: #928f9b; }
+        html.dark .border-indigo-200 { border-color: #3d3d8e; }
+        html.dark .border-indigo-300 { border-color: #8f85e1; }
+        html.dark .border-amber-300 { border-color: #bc8642; }
+        html.dark .focus-within\:border-indigo-500:focus-within { border-color: #c9bfff; }
+        html.dark .focus-within\:ring-indigo-500:focus-within { --tw-ring-color: #c9bfff; }
+        html.dark .border-black\/5 { border-color: rgb(255 255 255 / .14); }
+        html.dark .placeholder\:text-slate-400::placeholder { color: #b7b4c1; }
+        html.dark header.bg-indigo-100 { background-color: #34323f; }
+        html.dark .custom-scrollbar::-webkit-scrollbar-track { background: #1c1b20; }
+        html.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #5f5d68; }
+        html.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #787581; }
+        html.dark .utterance.active .box {
+            background-color: #43414f !important; border-color: #c9bfff !important; box-shadow: 0 4px 10px -2px rgba(0, 0, 0, .55) !important;
+        }
+        html.dark .avatar-dyn { background-color: var(--av-bg-d) !important; color: var(--av-fg-d) !important; }
+        html.dark #custom-alert { background-color: #e3e2e8; color: #313035; }
+        html.dark #custom-alert.alert-error { background-color: #822624; color: #fedad6; }
+        html.dark #custom-alert button { color: inherit; }
+        html.dark #custom-alert button:hover { background-color: rgb(255 255 255 / .12); }
+        html.dark #custom-alert:not(.alert-error) button:hover { background-color: rgb(0 0 0 / .12); }
+        #theme-btn .icon-sun { display: none; }
+        html.dark #theme-btn .icon-sun { display: inline; }
+        html.dark #theme-btn .icon-moon { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen overflow-hidden flex flex-col font-sans">
+
+    <!-- Sem barra no topo: o crédito fica no canto esquerdo e os botões no canto direito, ao lado do vídeo -->
+    <p id="chrome-left" class="fixed top-2 left-3 z-20 m-0 text-[11px] text-indigo-700 pointer-events-none">Criado por <span class="font-semibold">Ana Carolina Caumo</span></p>
+    <div id="chrome-right" class="fixed top-2 right-3 z-20 flex bg-white border border-slate-200 rounded-xl shadow-md p-1">
+        <div id="mode-switch" role="group" aria-label="Modo" class="flex gap-0.5">
+            <button id="mode-transcripts" type="button" aria-pressed="true" class="chrome-btn flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-slate-600 hover:bg-slate-100"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="14" y2="18"></line></svg><span>Transcrições</span></button>
+            <button id="mode-video" type="button" aria-pressed="false" class="chrome-btn flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-slate-600 hover:bg-slate-100"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg><span>Só vídeo</span></button>
+            <button id="mode-questions" type="button" aria-pressed="false" class="chrome-btn flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-slate-600 hover:bg-slate-100"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span>Perguntas do avaliador</span></button>
+        </div>
+        <span class="sep bg-slate-200" aria-hidden="true"></span>
+        <button id="theme-btn" type="button" aria-pressed="false" aria-label="Mudar para o modo escuro" title="Mudar para o modo escuro" class="chrome-btn flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors text-slate-600 hover:bg-slate-100">
+            <svg class="icon-moon shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            <svg class="icon-sun shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+            <span id="theme-label">Modo escuro</span>
+        </button>
+    </div>
+
+    <main id="main" data-mode="transcripts" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Em cima, no centro: o vídeo (carregado pela própria página, ninguém precisa enviar nada) -->
+        <section id="video-section" class="shrink-0 px-6 py-2 flex flex-col items-center gap-2 border-slate-200 bg-slate-100">
+            <div id="video-wrapper" class="flex items-center shrink-0 max-w-full">
+                <div id="video-box" class="bg-black rounded-xl overflow-hidden shadow-lg aspect-video min-w-0 max-w-full flex items-center justify-center relative">
+                    <div id="yt-host" class="w-full h-full"></div>
+                    <video id="html5" class="hidden w-full h-full object-contain" controls playsinline></video>
+                    <div id="video-msg" class="video-msg hidden absolute inset-0 items-center justify-center text-center text-sm leading-relaxed p-6"></div>
+                </div>
+                <div id="skip-row">
+                    <button id="skip-back-btn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm">-5s</button>
+                    <button id="skip-forward-btn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm">+5s</button>
+                </div>
+            </div>
+            <!-- Trecho da transcrição (modo perguntas): fica logo abaixo do vídeo -->
+            <div id="ctx-panel" class="w-full">
+                <div class="flex items-center justify-between gap-3 mb-2 shrink-0">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Trecho da transcrição <span id="ctx-sub" class="normal-case tracking-normal font-semibold">(expressão destacada · turnos vizinhos esmaecidos)</span></div>
+                    <button id="ctx-close" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-700 underline underline-offset-2">Fechar</button>
+                </div>
+                <div id="ctx-body" class="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1"></div>
+            </div>
+        </section>
+
+        <div id="splitter" role="separator" aria-orientation="horizontal" tabindex="0" title="Arraste para aumentar ou diminuir o vídeo (duplo clique: tamanho padrão)" aria-label="Tamanho do vídeo" class="shrink-0 h-3 flex items-center justify-center cursor-row-resize bg-slate-100 border-y border-slate-200 select-none"><span class="grip"></span></div>
+
+        <!-- Embaixo, metade e metade: transcrições (EN | PT) ou perguntas -->
+        <section id="panel" class="flex-1 min-h-0 flex flex-col bg-white overflow-hidden relative">
+
+            <div id="view-transcripts" class="flex flex-1 min-h-0 flex-col">
+                <div class="content-pad bg-white border-b border-slate-200 py-3 shadow-sm z-10 flex gap-3 items-center justify-between shrink-0">
+                    <div id="search-box" class="flex items-center gap-2 flex-1 min-w-0 bg-slate-100 rounded-lg px-3 py-1.5 border border-slate-200 focus-within:ring-1 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 shrink-0"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <input type="text" id="search-input" placeholder="Buscar nas transcrições (qualquer palavra, em inglês ou português)" class="w-full text-sm border-0 focus:ring-0 outline-none bg-transparent placeholder:text-slate-400">
+                    </div>
+                    <div id="lang-switch" role="group" aria-label="Idiomas" class="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200 shadow-sm shrink-0">
+                        <button type="button" data-lang="both" class="text-xs font-semibold px-3 py-1.5 rounded-md bg-white text-indigo-700 shadow-sm">EN + PT</button>
+                        <button type="button" data-lang="en" class="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-500 hover:text-slate-700">EN</button>
+                        <button type="button" data-lang="pt" class="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-500 hover:text-slate-700">PT</button>
+                    </div>
+                    <div class="fs-group flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200 shadow-sm shrink-0" role="group" aria-label="Tamanho da letra">
+                        <button type="button" aria-label="Diminuir a letra" title="Diminuir a letra" class="fs-down text-xs font-bold px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed">A&minus;</button>
+                        <button type="button" aria-label="Aumentar a letra" title="Aumentar a letra" class="fs-up text-base leading-none font-bold px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed">A+</button>
+                    </div>
+                    <button id="follow-btn" type="button" aria-pressed="true" title="Rolar as transcrições junto com o vídeo" class="shrink-0 text-xs font-semibold py-1.5 px-3 rounded-lg border transition-colors whitespace-nowrap shadow-sm bg-indigo-100 text-indigo-700 border-indigo-300">Acompanhar vídeo</button>
+                    <span id="utterance-count" class="shrink-0 text-xs font-semibold bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full whitespace-nowrap">0 turnos</span>
+                </div>
+                <div id="transcript-container" class="lang-both content-pad flex-1 overflow-y-auto pb-2 custom-scrollbar bg-slate-50/50 pb-32 relative"></div>
+            </div>
+
+            <div id="view-questions" class="hidden flex-1 min-h-0 flex-col">
+                <div class="content-pad bg-white border-b border-slate-200 py-3 shadow-sm z-10 shrink-0">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <h2 class="text-xs font-bold text-indigo-900 uppercase tracking-wider">Perguntas do avaliador</h2>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div id="q-filter" role="group" aria-label="Filtrar perguntas" class="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200 shadow-sm">
+                                <button type="button" data-f="all" class="text-xs font-semibold px-3 py-1.5 rounded-md bg-white text-indigo-700 shadow-sm">Todas</button>
+                                <button type="button" data-f="review" class="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-500 hover:text-slate-700">Para rever</button>
+                                <button type="button" data-f="todo" class="text-xs font-semibold px-3 py-1.5 rounded-md text-slate-500 hover:text-slate-700">Sem avaliação</button>
+                            </div>
+                            <div class="fs-group flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200 shadow-sm shrink-0" role="group" aria-label="Tamanho da letra">
+                                <button type="button" aria-label="Diminuir a letra" title="Diminuir a letra" class="fs-down text-xs font-bold px-2.5 py-1.5 rounded-md text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed">A&minus;</button>
+                                <button type="button" aria-label="Aumentar a letra" title="Aumentar a letra" class="fs-up text-base leading-none font-bold px-2.5 py-1 rounded-md text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed">A+</button>
+                            </div>
+                            <button id="q-shuffle" type="button" title="Muda a ordem das perguntas (clique de novo para voltar à ordem original)" class="text-xs font-semibold py-1.5 px-3 rounded-lg border transition-colors whitespace-nowrap shadow-sm bg-white text-slate-500 border-slate-300 hover:bg-slate-50">Embaralhar</button>
+                            <span id="q-progress" class="text-xs font-semibold bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full whitespace-nowrap">Pergunta 0 de 0</span>
+                        </div>
+                    </div>
+                    <div id="q-nav" class="flex flex-wrap gap-1.5 pt-1"></div>
+                    <div id="q-stats" class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 mt-3"></div>
+                    <p id="q-help" class="text-[11px] text-slate-500 mt-1">Clique no horário (no título ou no texto da pergunta) para ir àquele ponto do vídeo; clicar de novo repete. Depois de abrir o gabarito, marque como foi: o número da pergunta ganha cor.</p>
+                </div>
+                <div id="q-body" class="content-pad flex-1 overflow-y-auto py-4 custom-scrollbar bg-slate-50/50"></div>
+                <div class="content-pad border-t border-slate-200 bg-white py-3 flex justify-between items-center shrink-0">
+                    <button id="q-prev" type="button" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">&larr; Anterior</button>
+                    <button id="q-next" type="button" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">Próxima &rarr;</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===== DADOS EMBUTIDOS =====
+         As duas transcrições (XML) e as perguntas (TXT) ficam aqui dentro: a página funciona sozinha, sem enviar arquivo nenhum.
+         Para corrigir uma pergunta ou uma frase, basta editar o texto dentro do bloco correspondente. -->
+    <script id="data-en" type="text/plain"><doc id="ANDY_BURNHAM_SPEECH_TO_LABOUR_PARTY_CONFERENCE_2026" file="ANDY_BURNHAM_SPEECH_TO_LABOUR_PARTY_CONFERENCE_2026.TXT">
+  <u who="andy burnham" role="politician" video_time="00:00:01">All together now. All together now. That's my rallying call to the country today. When we pull as one, there is nothing we can't do. Today we draw a line on a decade of division. We stop doom-scrolling on posts running Britain down. And we put the country on a new path. Britain with belief again, people with hope again.</u>
+  <u who="andy burnham" role="politician" video_time="00:00:50">It's very hard for me to put into words the emotion. I feel standing here before you all. For me, life truly has come full circle because this is where my story began. My granddad drove a lorry along these docks for Tate&amp; Lyle. My gran Kitty inherited the drive of her Irish ancestors. She walked 3 miles out of the bombed-out city after the war to put a deposit down on a house without Jimmy's knowledge, actually.</u>
+  <u who="andy burnham" role="politician" video_time="00:01:29">I won't do that to you, John, wherever you are, Chancellor. She put a deposit down on a house, the house where I was born. It changed the fortunes of my family. It was where my mum and dad started off, built a partnership, and went on to create our own family home and filled it with life, love, and laughter.</u>
+  <u who="andy burnham" role="politician" video_time="00:02:05">Eileen and Roy gave me a care for people forged by her faith, his politics, and the values of this great city we are in again for our conference. They guided me to the point where I stand before you today. Ours is the same story of so many families, British families of my generation, a story of working-class aspiration, a desire to get on and give back, never pulling up the ladder, And a post-war Britain that backed them to do it.</u>
+  <u who="andy burnham" role="politician" video_time="00:02:46">It's still there, as I saw in Stourbridge this summer. I watched a whole community getting stuck in to support those whose homes had been burnt down. Proof the British people haven't changed, still as great as they ever were. But something is different these days. That sense of the powers that be pulling against the people, not with them. If there's one thing I want to put right, it's that.</u>
+  <u who="andy burnham" role="politician" video_time="00:03:25">Imagine living in a Britain where people feel the country has got their back again. A Britain for everyone, no matter who who we are or where we're born, we would be unstoppable. And we will be.</u>
+  <u who="andy burnham" role="politician" video_time="00:03:57">Conference, I am 10 weeks into this job. And not all of my recent predecessors have been able to say that. I've been thinking, thinking very carefully about what to say to you. Today. Of course, I am here to speak to you, our Labour family, the other family that I love so much. For the historic victory he achieved for us, I'm here to say thank you, Keir.</u>
+  <u who="andy burnham" role="politician" video_time="00:04:55">Thank you, Keir. And to say thank you to the whole of this conference and to all of you for the backing that you have given me. The politician in me wants to give the usual tub-thumping conference speech today. But the patriot in me tells me something very different is needed. This country isn't where any of us would want it to be. Politics as usual has taken it backwards.</u>
+  <u who="andy burnham" role="politician" video_time="00:05:47">More of the same isn't good enough. That's why I feel I have to break the mould. Today. I'm going to give you a real speech. About time. Thanks, Margaret. I left Westminster a decade ago because of my frustration at its failure to face up to what happened at Hillsborough. Its refusal to treat all parts of the country equally and fairly. It's capitulation in the face of the social care crisis.</u>
+  <u who="andy burnham" role="politician" video_time="00:06:31">So I became an outsider from the Westminster Club. When I asked the people of Macclesfield to support my return, it was not because I missed Westminster so much. It was to come back to change it. To make politics work for you.</u>
+  <u who="andy burnham" role="politician" video_time="00:07:07">Everyone can see the position Britain is in. Everyone knows Things are not working as they should. Everyone is talking about how life is too expensive. Everyone wants less drift and more direction. Today I answer that call. Hope. Hope. Again. Comes from honesty. And we will have hope again. But first, honesty. It comes from saying the things politicians usually avoid. I will say it straight. Britain has been on the wrong path for a long time.</u>
+  <u who="andy burnham" role="politician" video_time="00:07:51">I will say it straight. Britain has been on the wrong path for a long time. Deindustrialisation, deregulation, privatisation, austerity, Brexit. And what has it given us? A country run for vested interests, not in the public interest, with power held in too few hands and too many places left to drift. I am ready to do things my predecessors wouldn't. I will make a break with the direction of the past 40 years and put Britain on a new path.</u>
+  <u who="andy burnham" role="politician" video_time="00:08:35">Build a new economy and a new politics. That is the case I make to you today. Conference, change will be difficult. It always is. But I know we can do it. Because we have done it before. In 1945, we had the vision to build the peace. We had the bravery to make change. We built good homes, secure jobs, health and education for everyone. We gave Britain hope again.</u>
+  <u who="andy burnham" role="politician" video_time="00:09:19">We made working-class aspiration feel real for families like mine. We built the common good, or at least we did until the 1980s. Suddenly, the commonwealth we had created, this party, the wealth we had created for the many was seen as an opportunity for the few. Homes, water, energy, transport, care. Care.</u>
+  <u who="andy burnham" role="politician" video_time="00:09:59">Broken up and sold off. The British right talk about taking back control. Never let them forget they are the ones that gave it away in the first place.</u>
+  <u who="andy burnham" role="politician" video_time="00:10:19">Thank you. Thank you, conference. Thank you. Economic control diminished by selling off essentials. Political control corroded by the hollowing out of councils. Immigration control weakened by Brexit.</u>
+  <u who="andy burnham" role="politician" video_time="00:11:12">Later this year, we will publish our plan for Britain. It will set out how, over 10 years, we will make this country work for you. Again. More control of the basics so that we can make it more functional. More power in the hands of people and places to set their own ambitions. And from there, good growth in every postcode, hope in every heart.</u>
+  <u who="andy burnham" role="politician" video_time="00:11:52">Our journey starts where I started, in the Old Roan, not far from here, with housing, a home. That home on Keeble Drive unlocked the aspiration in my mum and dad for a better life for us all and has taken us to places we could never have imagined. With a good home, everything is possible. Without one, it feels like nothing is. Kids can't have a good start in life.</u>
+  <u who="andy burnham" role="politician" video_time="00:12:31">Families can't have good health, physical and mental health. Over a million people are in that position on housing waiting lists, almost exactly the same number as the homes we lost through Right to Buy in the 1980s. I will not rest until we live in a Britain where everyone has a roof over their head every night and no one is forced to sleep rough on our streets.</u>
+  <u who="andy burnham" role="politician" video_time="00:13:05">On my first day in this job, On the steps of Downing Street, I set an immediate mission to end the need for rough sleeping. Everyone in. Our new permanent national policy, putting the right principles and standards back at the heart of this country.</u>
+  <u who="andy burnham" role="politician" video_time="00:13:40">The care for people I got from my mum and dad at the heart of the running of the British state. From there, the biggest council house building programme since the post-war era, led by Angela Rayner. And I am so specific proud of the people who built it. About council homes because we need to restore stronger democratic control over our housing stock. We will help councils build again and make it affordable by building on unused public land.</u>
+  <u who="andy burnham" role="politician" video_time="00:14:26">We will reform right to buy, not taking the right away from anyone in an existing home but removing it from the new homes we build so they are there for generations to come.</u>
+  <u who="andy burnham" role="politician" video_time="00:14:51">Rebuilding our commonwealth, restoring the public housing stock to what it once was. Not just by building new, but acting on the private rented stock too. Go to almost any town across Britain and you will see plenty of empty homes. We will give councils the power to take control of them and bring them back into the public housing stock. You will see rented homes in a poor state of repair too on so many British streets.</u>
+  <u who="andy burnham" role="politician" video_time="00:15:37">Homes which harm the health of the people inside and drag down the streets around them. The worst of it, often owned by absent landlords who are paid through the benefit system but refuse to reinvest anything in the upkeep of the property.</u>
+  <u who="andy burnham" role="politician" video_time="00:16:05">It is time to call an end to this. Landlords who rent out the worst quality homes will be given warnings to improve them. If they refuse, we will make it much easier for councils to acquire those homes, and we will legislate if necessary.</u>
+  <u who="andy burnham" role="politician" video_time="00:16:31">We don't let people sell food which damages health. So why allow it with homes? From now on, we won't. This is what I mean about taking back control with our communities. But I also want to get back to a Britain where young people starting out are able to buy a home like my mum and dad did, like I did. They have had it tougher than us, working hard, paying bills, trying to save.</u>
+  <u who="andy burnham" role="politician" video_time="00:16:59">But looking at a student loan which never gets any smaller. Today I say to them, we are bringing back the hope. You can have a home of your own. Your First Home will reduce the size of the deposit you need. It will open up home ownership to those not backed by the bank of mum and dad. And we promise we will not forget our leaseholders. We will introduce a bill before Christmas for long overdue leasehold reform.</u>
+  <u who="andy burnham" role="politician" video_time="00:17:45">To the millions of leaseholders across the country, you have my word. The days of you being squeezed for every penny are coming to an end.</u>
+  <u who="andy burnham" role="politician" video_time="00:18:04">Conference, this is the break we are making with the flawed thinking of the last 40 years. Not seeing housing only as a market with winners and losers, but as an essential everyone needs for a good life. And the next stage of our journey is to apply that same philosophy to the most basic thing of all. Water is a symbol of what has gone wrong with Britain. Water is a symbol of what has gone wrong with Britain.</u>
+  <u who="andy burnham" role="politician" video_time="00:18:52">A service where the shareholders never lose and the public never win, from which some have siphoned out easy money while the public picked up the bill for the sewage in our seas. It stinks.</u>
+  <u who="andy burnham" role="politician" video_time="00:19:16">I will not allow it to continue like this. Today I can confirm Angela Eagle will present a strengthened water bill to Parliament. The centrepiece of that bill will be this: the repeal of Margaret Thatcher's ideological ban on public ownership of water companies. Yeah. Right. Thank you, Tom.</u>
+  <u who="andy burnham" role="politician" video_time="00:20:18">It will start a 10-year journey to a very different water system. It will strengthen public control. Mayors will have new powers to hold water companies to account.</u>
+  <u who="andy burnham" role="politician" video_time="00:20:41">With tougher consequences for those which repeatedly fail. It will close the loopholes used to pay excessive bonuses. Where private companies serve the public interest, we will support them, but the consequences will be clear for those who do not, including taking back control or public ownership. Conference—</u>
+  <u who="andy burnham" role="politician" video_time="00:21:19">conference, when people hear the phrase public control, I am sure some think it's anti-business. It's the opposite. Businesses need the basics to be functional and affordable too, as does the wider economy. As someone said to me recently, there's a reason why you can't build all over the waterworks and the electric company on the Monopoly board.</u>
+  <u who="andy burnham" role="politician" video_time="00:21:52">One of the biggest barriers to growth in the UK is the cost of energy. British businesses and bill payers pay some of the highest energy costs in Europe. Within 10 years, I want those costs to be in line with our neighbours. This means reforming a broken energy market so it better serves the public interest. We are already taking more control of our electricity prices with a massive expansion of homegrown renewables and nuclear.</u>
+  <u who="andy burnham" role="politician" video_time="00:22:27">I have asked Miatta to speed up the breaking of the link between what we pay for power at home and the international gas market to get bills down.</u>
+  <u who="andy burnham" role="politician" video_time="00:22:51">And we will be pragmatic in relation to the North Sea as we build a bridge to a clean energy future and face the climate crisis. But it's not just the price, the system needs to work better too. You would not believe how many businesses complain to me that they can't get going because they can't get connected to the grid. It pushes costs up, It drags growth down and it holds Britain back.</u>
+  <u who="andy burnham" role="politician" video_time="00:23:24">We won't get the growth and inward investment we need if we don't fix it. So for the first time, we will have a national energy plan. And we will bring back local democratic control through a stronger role for mayors and local leaders. But we must go further. Today I can announce our plan for Great British Grid, a new branch of Great British Energy.</u>
+  <u who="andy burnham" role="politician" video_time="00:23:59">A publicly owned company that will challenge the private sector operators. It will increase competition, drive down costs, and speed up connections. So businesses can expand and grow more quickly. Energy, water, housing back under stronger public control.</u>
+  <u who="andy burnham" role="politician" video_time="00:24:34">We rely on them, we pay for them, and once again we will have power over them. I realise people can't wait forever for change though. They need breathing space now, and I am determined to provide it. I can say to everyone watching, you will see VAT disappear off Your electricity bill this Thursday.</u>
+  <u who="andy burnham" role="politician" video_time="00:25:34">I didn't expect a standing ovation for that, but I'll take it. Thank you, conference. From January, you will be able to travel for the whole of 2027 anywhere in England, paying no more than £2 for a single bus journey.</u>
+  <u who="andy burnham" role="politician" video_time="00:26:08">You knew I wouldn't get through a conference speech without mentioning buses, didn't you? These things are not everything, but I hope you will see it as a sign, a strong one, of our intent to get your bills and fares down as you wait for the bigger changes to come. I would love to go quicker, but I have to be honest about what the country can afford. I will stick to our fiscal rules to get borrowing and debt down.</u>
+  <u who="andy burnham" role="politician" video_time="00:26:44">The approach I am outlining today is the responsible one. If we build a generation of council homes, we will save billions from the housing benefit budget over the decade. If we get energy bills down, we will better control inflation and support the economy. If we change the way we support people, we will get more people into work and the welfare bill down. Not through crude cuts— that should never be the Labour way— but by investing in people, in their success, supporting them to get where they want to be rather than paying for failure as the country does now.</u>
+  <u who="andy burnham" role="politician" video_time="00:27:32">Our plan for public control is a plan for growth. Growth of people, places and businesses. The truth is this: when we gave up public control, we left people exposed just when It was getting harder to grow up and harder to grow old. Support has been cut away from young and old, and that leaves the country paying for failure on a grand scale. Almost a million young people not working or learning, thousands of older people stuck in hospital because of the lack of good home care.</u>
+  <u who="andy burnham" role="politician" video_time="00:28:18">We can't afford to carry on like this. In 1945, we had the Beveridge Report. We need something similar now, a new social contract for the 21st century. You know of my long-held ambitions to reform social care.</u>
+  <u who="andy burnham" role="politician" video_time="00:28:53">When I was a new MP in the early 2000s, I despaired at what I saw when my gran Kitty went through the system. I winced at the pain it caused my mum. My gran's engagement ring ripped from her finger and stolen in a care home. Care not worthy of the name. And the modest savings she had built up through her life, starting with the house where I was born, all taken to pay for it.</u>
+  <u who="andy burnham" role="politician" video_time="00:29:30">I vowed then to fight for something better for my parents' generation. And here we are, 25 years later. If anything, it's worse today than it was then. What an indictment of my generation of politicians, myself included. Too cowardly to fix something as basic as the care we give to each other. Is it any wonder people are giving up on politics?</u>
+  <u who="andy burnham" role="politician" video_time="00:30:09">I watched closely the people who looked after my dad, caring for other people's parents on poverty pay. Hear, hear. With huge skill, humour, and humanity, holding a threadbare system somehow together, yet invisible to the political class of this country. I want to speak directly today to our care workers. You are not Invisible to me. Thank you.</u>
+  <u who="andy burnham" role="politician" video_time="00:31:25">I see you, I thank you, and I am sorry that my profession has let down yours for so long. I promise you I won't leave this job without doing everything I can to change things for you. And I say the same to our wonderful NHS staff.</u>
+  <u who="andy burnham" role="politician" video_time="00:32:08">We have let you down too, left you under intolerable pressure, at risk of burnout, dealing with 999 calls from a failing care system. Corridor care, your daily reality. If we carry on like this conference, broken social care will break the NHS too, and we can't let that happen. We must never let that happen. This party that founded the National Health Service.</u>
+  <u who="andy burnham" role="politician" video_time="00:32:56">There is only one real answer: a person-centred, high-quality care service that starts in the home. A A system in the best traditions of this party where everyone contributes and everyone is covered. Free at the point of use and no care charges paid out of your basic state pension.</u>
+  <u who="andy burnham" role="politician" video_time="00:33:39">Care that is about people, not profit, which gives peace of mind over care needs in later life, which protects people's homes and their savings, and gives proper recognition to the care workers we will all need to rely on at some point in our lives. Conference, this is the National Care Service We will build.</u>
+  <u who="andy burnham" role="politician" video_time="00:34:25">We will. We will. Thank you, conference. We're going to do it. We are going to do it. A landmark policy as significant as the creation of the NHS itself and utterly essential to securing its future. NHS savings from fewer ambulance callouts, A&amp;E admissions, and vulnerable people being stuck unnecessarily in hospital. We will start laying the ground now for the National Care Service and introduce it in the next Parliament.</u>
+  <u who="andy burnham" role="politician" video_time="00:35:12">Louise Casey's review will advise us on exactly how, and Yvette and I will seek to build the maximum national consensus around her recommendations. It will be fully funded and not through borrowing. Conference, I won't pretend some of this won't be difficult. I accept I may pay a political price. But someone has to go through the pain barrier and rip the plaster off.</u>
+  <u who="andy burnham" role="politician" video_time="00:35:51">Thank you. It's the leadership I promised you when I asked to be your leader, and I will do it. But I'll be honest as well. We promised in our manifesto to keep the triple lock unchanged throughout this Parliament. I will honour that promise. I will honour that promise. And I'll do more. I'll do more. That promise will take the State Pension to a record high. From there, in April 2030, we will adjust it.</u>
+  <u who="andy burnham" role="politician" video_time="00:36:42">The State Pension will continue to rise every year at least by prices or 2.5%. And it will hold its value relative to earnings over time. So that pensioners will always share in the rising prosperity of the nation.</u>
+  <u who="andy burnham" role="politician" video_time="00:37:09">But this change will generate significant savings which we will use to build up our National Care Service. Some may not realise it, but older people with nothing more than the State Pension, or only a little more, can find themselves paying care charges today from that small income. Under my plan, this will no longer happen. I can also confirm today our commitment to ensure that the low-income pensioners won't be dragged into paying income tax in this Parliament.</u>
+  <u who="andy burnham" role="politician" video_time="00:38:09">So this is the deal: a state pension that rises every year. No care charges, and a high-quality National Care Service to give peace of mind in later life. Conference, I am going to go out and argue for that— a good deal for our pensioners and for older people in the 21st century.</u>
+  <u who="andy burnham" role="politician" video_time="00:38:37">And I will do it I will do it in memory of my dad and out of complete respect for everyone who cared for him.</u>
+  <u who="andy burnham" role="politician" video_time="00:38:54">Conference, we will need to show the same boldness for our young people too. Just when growing up got harder in the social media age, Their support was stripped away. Youth services practically abolished in the early 2010s. Children's mental health services cut. Families left to battle for support for kids with special educational needs and disabilities. So many young people cast adrift by a school system built for some, not all, overly focused on the university route and not enough on technical education.</u>
+  <u who="andy burnham" role="politician" video_time="00:39:38">Should we be really surprised that the numbers of late teens and early 20s on benefits has grown? Conference, it's not their fault, it's ours. Politicians fail to give people, young people, the support they need as they grow up in a tougher world and then threaten them in their 20s that they will strip away what they're left with. How is that fair? How does that build a strong society?</u>
+  <u who="andy burnham" role="politician" video_time="00:40:06">We have a choice, Conference. Either we invest in our young people or we pay for failure through the benefits system. Truthfully, we can't afford to do both. My choice is to invest in them. We can't take control of the country's future if we leave so many of our young people drifting towards it.</u>
+  <u who="andy burnham" role="politician" video_time="00:40:28">We await the final report from Alan Milburn's review, but I can say now we will change the education system and the welfare system. We will rebuild a system of comprehensive education in this country.</u>
+  <u who="andy burnham" role="politician" video_time="00:40:53">With parity between academic and technical, with Lucy Powell leading the way. Good quality pathways for all from 14 and the right support for our young people when they need it. A 45-day work placement between 16 and 18, an apprenticeship at 18, and no long waits anymore for mental health support growing up.</u>
+  <u who="andy burnham" role="politician" video_time="00:41:31">We will need a fundamental rethink of the welfare system to find the money for these opportunities upfront. And we will require young people to take up the help presented to them, guaranteeing in-work support and not leaving those out of work losing confidence and connection. This is a different approach to welfare. It is based on a philosophy of social security. A country which invests in people's success rather than abandoning them and paying for failure.</u>
+  <u who="andy burnham" role="politician" video_time="00:42:01">A country like that will be much more resilient to the shocks we will undoubtedly face in the rest of this century and more able to meet its NATO obligations on defence. This leadership we are showing at home will be matched on the international stage. I will be steadfast in my support for Ukraine and stand up to threats wherever they come from, whether Russia, Iran, or anywhere. And conference, we will be principled in our leadership.</u>
+  <u who="andy burnham" role="politician" video_time="00:42:41">In securing a 2-state solution between Israel and Palestine, as Ed Miliband has shown. This is the Labour way, a plan for Britain that will enhance our social security and our national security. You don't make Britain safer by leaving a younger generation without hope, stuck at home looking at screens. You do it by giving young people hope again, and you do it by getting our economy growing strongly again.</u>
+  <u who="andy burnham" role="politician" video_time="00:43:30">I know Britain is full of brilliant businesses who want our young people to succeed and want to employ them. And we will help them do that and grow together. I have a theory of growth. It starts by retaking control of the essentials that make a place work or not. You've got to have that control over the fundamental things that everybody needs. And from there, you devolve more power to places to put them in charge and decide their own destiny.</u>
+  <u who="andy burnham" role="politician" video_time="00:44:02">And then in doing those things, we optimize the conditions for businesses to grow and making— we support our people so they're there for our businesses to employ. Conference, I developed this approach over a decade leading the country's fastest-growing city region, and I could not have been more proud to hand over to Bev Craig as the new Mayor of Greater Manchester.</u>
+  <u who="andy burnham" role="politician" video_time="00:44:39">It's like the other way round from when Alex Ferguson handed over to David Moyes. I think, you know, this is David Moyes handing over to Alex Ferguson, I think.</u>
+  <u who="andy burnham" role="politician" video_time="00:44:55">We have a theory of growth and we built it with Steve too when we left Westminster together and with the other mayors who are with us today. And you can see the change, you can feel it in this city, can't you? It's amazing, isn't it, to be here, to see it every year because we come back every year. We see the change every year. And how good is that to see?</u>
+  <u who="andy burnham" role="politician" video_time="00:45:20">And we want it everywhere, don't we? Every place represented in this conference hall today. And that's what I intend to do. I intend to take what I did in Manchester, a plan for good growth, drive it from the very centre of government into every postcode in Britain. Number 10 North, that's its job, working in lockstep with John. And the Treasury, overseeing the rewiring of the British state, the rebuilding of resilience in our communities, and the reindustrialisation of our regions, changing government procurement so that it backs British industry, as our trade unions have rightly pushed us to do.</u>
+  <u who="andy burnham" role="politician" video_time="00:46:13">And that will require culture change in Whitehall. The Mayor of the Liverpool City Region should not have had to fight Whitehall as hard as he did to get a new ferry built on the banks of the River Mersey.</u>
+  <u who="andy burnham" role="politician" video_time="00:46:34">And what a job he's doing. Liverpool growing faster than the UK economy. How often Have we been able to say that in our lifetimes? What a brilliant thing to be able to say. Places written off by the powers that be in the past are now proving them wrong. Bringing in big names in AI like Kyndryl into the city. I see huge potential for more of this in every part of Britain.</u>
+  <u who="andy burnham" role="politician" video_time="00:46:59">I see startups and scale-ups pouring out of our world-class universities. I see businesses up and down the country Playing their part and ready to do more. As Gordon Brown has said, we can be the world's innovation nation, and he's right. We can.</u>
+  <u who="andy burnham" role="politician" video_time="00:47:25">A nation trusted by others to be a global leader in AI, an honest broker. When Britain takes the presidency. Of the G20 next year, I will show our newfound confidence as a country, and I will show it to the world by putting AI center stage. And Britain will then work to develop a new global code to capture its benefits whilst being clear-eyed about its risks. Just as Gordon did in the financial crisis in 2008, so Britain will do it again, step forward and bring people together around what's right for the future, securing our prosperity but also our safety, and particularly the safety of our young people.</u>
+  <u who="andy burnham" role="politician" video_time="00:48:15">We led the world's first industrial revolution from the Midlands and the North of England, so why can't we lead the next? We can, Conference, and we will. We can.</u>
+  <u who="andy burnham" role="politician" video_time="00:48:36">We are a country full of working-class aspiration, and we will be the government that unlocks it. Conference, there is one final thing we need to change if our plan for Britain is to succeed: our politics. Westminster prizes point-scoring over problem-solving, and that is why so many things have gone unfixed for so long. If we want to change Britain, we need to change ourselves. I will work as hard as I can to get as much cross-party support for our plan for Britain.</u>
+  <u who="andy burnham" role="politician" video_time="00:49:17">If we can secure that, it will project a message of confidence and stability to markets and the world about Britain's future direction. It is why I decided to make this very different conference speech. We can't succeed in the eyes of the world if we continue with the levels of political turbulence we have seen in recent times. It is always in my mind that I'm the 7th Prime Minister in 10 years.</u>
+  <u who="andy burnham" role="politician" video_time="00:49:44">It is why I want to underpin our plan for Britain with a new politics. We will all have failed in our public duty duties if we carry on as we are and open the door of Number 10 to a divisive government on less than 30% of the vote or less. And we shouldn't do that, conference.</u>
+  <u who="andy burnham" role="politician" video_time="00:50:13">In past years, you have voted twice to support electoral reform. I hear you. I agree with you. And today I am announcing a new National Commission on Electoral Reform.</u>
+  <u who="andy burnham" role="politician" video_time="00:50:55">I invite all the political parties to be part of its work. We will contest the next election with a manifesto commitment to change the electoral system so that everyone's vote counts and everyone's voice is heard. Thank you.</u>
+  <u who="andy burnham" role="politician" video_time="00:51:25">As you can see, what I am outlining is a more serious and thought-through prospectus for the future of Britain than people have been offered in a generation. I appreciate some of it is difficult. I accept people, including in this hall, will not agree with every part of it. But I believe this is what we need. Small things will not get us through what are difficult times. We need to be bigger and have the courage of our convictions.</u>
+  <u who="andy burnham" role="politician" video_time="00:52:07">I believe we can turn Britain around, but it requires us to think bigger about what we need to do. I will try my best to find common ground, but let me be clear, where I can't agree with others, I will fight hard for what I believe to be right and what I believe to be in the best interests of this country. Thank you.</u>
+  <u who="andy burnham" role="politician" video_time="00:53:18">Thank you, everyone. On the day my dad died, the Scottish First Minister said I would be the last Prime Minister of the United Kingdom. I quote that not to seek sympathy nor to criticize John Swinney. I don't think he knew the news at the time. And anyway, my dad Roy would have been the first to defend his right to say it. I relay it because I want you to know how it made me feel.</u>
+  <u who="andy burnham" role="politician" video_time="00:54:05">Utterly determined to prove him wrong. Whatever its flaws, this country gave my dad a good life, and it has given his sons opportunities he didn't get for himself.</u>
+  <u who="andy burnham" role="politician" video_time="00:54:57">He recognized that and was grateful for it. And so proud of what Nick, John, and I did with them. If only, if only he had been able to appreciate that moment of the family in Downing Street. The son of a man who failed his 11+, becoming Prime Minister. Thank you.</u>
+  <u who="andy burnham" role="politician" video_time="00:55:51">The fact it could even happen in this country would not have been lost on him. He could have gone to university himself, but times were different then, so it wasn't an option. But he voted every time, religiously, for the Labour governments which changed education so his sons could do that.</u>
+  <u who="andy burnham" role="politician" video_time="00:56:26">The United Kingdom my dad represented is the one I believe in. A union of nations that gave trade unions and the cooperative movement to the world. The National Health Service. A country that stood up to fascism. A country of solidarity, not separation. That's the Britain that my dad represented. 2 more minutes.</u>
+  <u who="andy burnham" role="politician" video_time="00:57:20">Britain is not perfect. It can be better, and we will make it so. But it still stands for something worth saving, worth fighting for.</u>
+  <u who="andy burnham" role="politician" video_time="00:57:43">And we will always be stronger facing a changing world together. Rather than separating. So I'm going to use this job to build the kind of Britain my dad wanted to see and fight with everything I've got to keep it together. Not the last Prime Minister of the United Kingdom, rather the first to rewire it to make it work for all people and places. Driving power out of Whitehall and into every postcode of Wales, Scotland, Northern Ireland, and England, and closing divides between people and places.</u>
+  <u who="andy burnham" role="politician" video_time="00:58:33">The first Prime Minister to make a break with politics as usual. I believe the plan I have outlined today will not just hold us together, it will allow us to rise again. Britain to rise again.</u>
+  <u who="andy burnham" role="politician" video_time="00:58:58">And we will be a Britain confident of our place in the world. It has changed dramatically since 2016, and in the spirit of this speech, we have to be honest. Brexit hasn't given us control.</u>
+  <u who="andy burnham" role="politician" video_time="00:59:28">We've lost some of the control we had over our economy as a decade of low growth has put us in a weaker position. And we've lost some of our control over immigration. At its most fundamental level, this is a debate about fairness. So I understand the anger about what's happening in the Channel. Shabana has done a great job in restoring our grip over the system.</u>
+  <u who="andy burnham" role="politician" video_time="00:59:59">People are arriving on small boats down 40% on the last year. Year, 50% from the early 2020s. Net migration down more than 80% since the peak of the Boris Johnson era. Conference, we make these changes, but we will always be grateful, always, and we thank them for those people who have come here and are contributing to our country. Thank you to them.</u>
+  <u who="andy burnham" role="politician" video_time="01:00:39">But control over immigration was weakened when we lost collaboration with our European partners, and we are still having to work hard to bring it back. Later this year, there will be a UK-EU summit where one of the issues on the agenda will be how we best work together on immigration. And beyond that, we will work to secure gains for our British industries most harmed by Brexit. Conference, these are important concrete steps, but they are not enough.</u>
+  <u who="andy burnham" role="politician" video_time="01:01:08">I say this to you and the country. We will not give Britain the clear path we need into the rest of this century until we decide on a long-term relationship with what is still our largest market. And I cannot say to you truthfully that where we are is good enough. Brexit has done more harm than good.</u>
+  <u who="andy burnham" role="politician" video_time="01:01:49">We need to restore a higher level of growth and prosperity for Britain. So I will take the opportunity around the to lay out to you, to lay out to the country what I believe the different options are for Britain's long-term relationship with our European partners. And there are different options. And I will see if we can find consensus around one which will give us clarity about our position and the future of the continent that we live on.</u>
+  <u who="andy burnham" role="politician" video_time="01:02:37">Well, conference, I did warn you this speech would be different, didn't I? But I think this moment in our country's history requires it. 1945. 1964, 1997, now. All moments of Labour governments. All moments which saw Britain rediscover a sense of hope. When I walked up Downing Street on my first day in the job, I promised to give Britain a circuit breaker. To get us out of the rut we've been in.</u>
+  <u who="andy burnham" role="politician" video_time="01:03:14">To get us believing again. I say this to everyone watching at home. You may disagree with some or all of what I've said today, but I have given you what you often say is missing from politics: honesty, ideas, and a clear direction for the country we all love. Thank you.</u>
+  <u who="andy burnham" role="politician" video_time="01:04:00">I now want to make a direct appeal to you. If you agree with enough of what I've said, Get behind this plan and get behind each other. It's time to draw a line, to move beyond a decade of drift and division, to bring a spirit of unity and positivity back to our country, to unlock the working-class aspiration that is still there in every postcode in this great land.</u>
+  <u who="andy burnham" role="politician" video_time="01:04:41">All together now, we can do it. We will believe again. We will hope again. Thank you, conference. Thank you very much. Thank you, everyone. Thank you.</u>
+</doc></script>
+    <script id="data-pt" type="text/plain"><doc id="ANDY_BURNHAM_SPEECH_TO_LABOUR_PARTY_CONFERENCE_2026" file="ANDY_BURNHAM_SPEECH_TO_LABOUR_PARTY_CONFERENCE_2026.TXT">
+  <u who="andy burnham" role="político" video_time="00:00:01">Todos juntos, agora. Todos juntos, agora. Esse é o meu chamado à mobilização para o país hoje. Quando agimos como um só, não há nada que não possamos fazer. Hoje pomos um ponto final em uma década de divisão. Paramos de rolar a tela atrás de más notícias, em postagens que só falam mal da Grã-Bretanha. E colocamos o país num novo caminho. Uma Grã-Bretanha voltando a acreditar, pessoas voltando a ter esperança.</u>
+  <u who="andy burnham" role="político" video_time="00:00:50">É muito difícil para mim colocar em palavras a emoção que sinto ao estar aqui diante de todos vocês. Para mim, a vida realmente fechou um ciclo, porque é aqui que a minha história começou. O meu avô dirigia um caminhão ao longo destas docas, para a Tate &amp; Lyle. A minha avó Kitty herdou a garra dos seus ancestrais irlandeses. Ela caminhou 3 milhas para fora da cidade devastada pelos bombardeios, depois da guerra, para dar a entrada numa casa sem que Jimmy soubesse, aliás.</u>
+  <u who="andy burnham" role="político" video_time="00:01:29">Eu não vou fazer isso com você, John, onde quer que você esteja, ministro da Fazenda. Ela deu a entrada numa casa, a casa onde eu nasci. Isso mudou a sorte da minha família. Foi onde a minha mãe e o meu pai começaram, construíram uma parceria e depois criaram o nosso próprio lar de família, e o encheram de vida, amor e risadas.</u>
+  <u who="andy burnham" role="político" video_time="00:02:05">Eileen e Roy me deram um cuidado com as pessoas forjado na fé dela, na política dele e nos valores desta grande cidade em que estamos de novo para a nossa conferência. Eles me guiaram até o ponto em que hoje estou diante de vocês. A nossa é a mesma história de tantas famílias, famílias britânicas da minha geração, uma história de aspiração da classe trabalhadora, de desejo de progredir e retribuir, sem nunca puxar a escada, E de uma Grã-Bretanha do pós-guerra que os apoiou para isso.</u>
+  <u who="andy burnham" role="político" video_time="00:02:46">Isso ainda existe, como vi em Stourbridge neste verão. Vi uma comunidade inteira arregaçando as mangas para apoiar pessoas cujas casas tinham sido destruídas por um incêndio. Prova de que o povo britânico não mudou, continua tão grandioso quanto sempre foi. Mas algo está diferente nestes dias. Aquela sensação de que os poderes constituídos puxam contra o povo, e não com ele. Se há uma coisa que quero corrigir, é essa.</u>
+  <u who="andy burnham" role="político" video_time="00:03:25">Imaginem viver numa Grã-Bretanha em que as pessoas sentem que o país está do lado delas de novo. Uma Grã-Bretanha para todos, não importa quem sejamos ou onde tenhamos nascido, seríamos imparáveis. E seremos.</u>
+  <u who="andy burnham" role="político" video_time="00:03:57">Delegados, estou há 10 semanas neste cargo. E nem todos os meus antecessores recentes puderam dizer isso. Tenho pensado, pensado com muito cuidado no que dizer a vocês. Hoje. É claro que estou aqui para falar com vocês, a nossa família trabalhista, a outra família que amo tanto. Pela vitória histórica que ele conquistou para nós, estou aqui para dizer obrigado, Keir.</u>
+  <u who="andy burnham" role="político" video_time="00:04:55">Obrigado, Keir. E para agradecer a toda esta conferência e a todos vocês pelo apoio que me deram. O político em mim quer fazer hoje o discurso inflamado de conferência de sempre. Mas o patriota em mim diz que é preciso algo muito diferente. Este país não está onde qualquer um de nós gostaria que estivesse. A política de sempre o fez andar para trás.</u>
+  <u who="andy burnham" role="político" video_time="00:05:47">Mais do mesmo não basta. É por isso que sinto que preciso quebrar o molde. Hoje. Vou fazer para vocês um discurso de verdade. Já era hora. Obrigado, Margaret. Deixei Westminster há uma década por causa da minha frustração com a incapacidade dela de enfrentar o que aconteceu em Hillsborough. A sua recusa em tratar todas as partes do país de forma igual e justa. A sua capitulação diante da crise dos cuidados sociais.</u>
+  <u who="andy burnham" role="político" video_time="00:06:31">Então me tornei um forasteiro do clube de Westminster. Quando pedi ao povo de Macclesfield que apoiasse o meu retorno, não foi porque eu sentisse tanta falta de Westminster. Foi para voltar e mudá-la. Para fazer a política funcionar para vocês.</u>
+  <u who="andy burnham" role="político" video_time="00:07:07">Todos conseguem ver a situação em que a Grã-Bretanha está. Todos sabem que As coisas não estão funcionando como deveriam. Todos falam de como a vida está cara demais. Todos querem menos deriva e mais direção. Hoje respondo a esse chamado. A esperança. A esperança de novo. Vem da honestidade. E voltaremos a ter esperança. Mas primeiro, a honestidade. Ela vem de dizer o que os políticos costumam evitar. Vou falar sem rodeios. A Grã-Bretanha está no caminho errado há muito tempo.</u>
+  <u who="andy burnham" role="político" video_time="00:07:51">Vou falar sem rodeios. A Grã-Bretanha está no caminho errado há muito tempo. Desindustrialização, desregulamentação, privatização, austeridade, Brexit. E o que isso nos deu? Um país administrado para interesses particulares, e não para o interesse público, com o poder concentrado em poucas mãos e lugares demais deixados à deriva. Estou pronto para fazer coisas que os meus antecessores não fariam. Vou romper com o rumo dos últimos 40 anos e colocar a Grã-Bretanha num novo caminho.</u>
+  <u who="andy burnham" role="político" video_time="00:08:35">Construir uma nova economia e uma nova política. Esse é o argumento que apresento a vocês hoje. Delegados, a mudança será difícil. Sempre é. Mas sei que podemos fazê-la. Porque já a fizemos antes. Em 1945, tivemos a visão de construir a paz. Tivemos a coragem de promover a mudança. Construímos boas moradias, empregos seguros, saúde e educação para todos. Devolvemos a esperança à Grã-Bretanha.</u>
+  <u who="andy burnham" role="político" video_time="00:09:19">Fizemos a aspiração da classe trabalhadora parecer real para famílias como a minha. Construímos o bem comum, ou pelo menos assim foi até a década de 1980. De repente, o patrimônio comum que tínhamos criado, este partido, a riqueza que tínhamos criado para os muitos foram vistos como uma oportunidade para os poucos. Moradia, água, energia, transporte, cuidados. Cuidados.</u>
+  <u who="andy burnham" role="político" video_time="00:09:59">Fatiados e vendidos. A direita britânica fala em retomar o controle. Nunca deixem que se esqueçam de que foram eles que o entregaram, para começar.</u>
+  <u who="andy burnham" role="político" video_time="00:10:19">Obrigado. Obrigado, delegados. Obrigado. O controle econômico diminuído pela venda de bens essenciais. O controle político corroído pelo esvaziamento dos conselhos municipais. O controle da imigração enfraquecido pelo Brexit.</u>
+  <u who="andy burnham" role="político" video_time="00:11:12">Ainda este ano, publicaremos o nosso plano para a Grã-Bretanha. Ele vai definir como, ao longo de 10 anos, faremos este país funcionar para vocês. De novo. Mais controle sobre o básico, para que possamos torná-lo mais funcional. Mais poder nas mãos das pessoas e dos lugares para definirem as suas próprias ambições. E, a partir daí, bom crescimento em cada CEP, esperança em cada coração.</u>
+  <u who="andy burnham" role="político" video_time="00:11:52">A nossa jornada começa onde eu comecei, em Old Roan, não muito longe daqui, com a moradia, um lar. Aquela casa na Keeble Drive destravou a aspiração dos meus pais por uma vida melhor para todos nós e nos levou a lugares que jamais poderíamos ter imaginado. Com uma boa casa, tudo é possível. Sem uma, parece que nada é. As crianças não conseguem ter um bom começo de vida.</u>
+  <u who="andy burnham" role="político" video_time="00:12:31">As famílias não conseguem ter boa saúde, física e mental. Mais de um milhão de pessoas estão nessa situação, em listas de espera por moradia, quase exatamente o mesmo número das moradias que perdemos com o Direito de Compra nos anos 1980. Não descansarei até vivermos numa Grã-Bretanha em que todos tenham um teto sobre a cabeça todas as noites e ninguém seja forçado a dormir ao relento nas nossas ruas.</u>
+  <u who="andy burnham" role="político" video_time="00:13:05">No meu primeiro dia neste cargo, Nos degraus de Downing Street, estabeleci a missão imediata de acabar com a necessidade de dormir na rua. Todos para dentro. A nossa nova política nacional permanente, que recoloca os princípios e padrões corretos no centro deste país.</u>
+  <u who="andy burnham" role="político" video_time="00:13:40">O cuidado com as pessoas que recebi da minha mãe e do meu pai no centro da gestão do Estado britânico. A partir daí, o maior programa de construção de moradias municipais desde a era do pós-guerra, liderado por Angela Rayner. E tenho tanto orgulho das pessoas que o construíram. É por causa das moradias municipais que precisamos restaurar um controle democrático mais forte sobre o nosso parque habitacional. Vamos ajudar os conselhos municipais a construir de novo e torná-lo financeiramente viável, construindo em terrenos públicos sem uso.</u>
+  <u who="andy burnham" role="político" video_time="00:14:26">Vamos reformar o direito de compra, sem tirar o direito de ninguém que já esteja numa casa, mas retirando-o das novas moradias que construirmos, para que elas existam por gerações.</u>
+  <u who="andy burnham" role="político" video_time="00:14:51">Reconstruir o nosso patrimônio comum, restaurando o parque habitacional público ao que ele já foi. Não apenas construindo novas moradias, mas também atuando sobre o parque de aluguel privado. Vá a quase qualquer cidade da Grã-Bretanha e você verá muitas casas vazias. Vamos dar aos conselhos municipais o poder de assumir o controle delas e trazê-las de volta ao parque habitacional público. Você verá também imóveis alugados em mau estado de conservação em tantas ruas britânicas.</u>
+  <u who="andy burnham" role="político" video_time="00:15:37">Moradias que prejudicam a saúde das pessoas que vivem dentro delas e puxam para baixo as ruas ao redor. O pior disso, muitas vezes, pertence a proprietários ausentes, que são pagos pelo sistema de benefícios mas se recusam a reinvestir qualquer coisa na manutenção do imóvel.</u>
+  <u who="andy burnham" role="político" video_time="00:16:05">É hora de dar um basta nisso. Os proprietários que alugam as moradias de pior qualidade receberão avisos para melhorá-las. Se se recusarem, tornaremos muito mais fácil para os conselhos municipais adquirirem essas moradias, e legislaremos se for necessário.</u>
+  <u who="andy burnham" role="político" video_time="00:16:31">Não deixamos que se venda comida que prejudica a saúde. Então por que permitir isso com moradias? A partir de agora, não permitiremos. É isso que quero dizer com retomar o controle junto com as nossas comunidades. Mas também quero voltar a uma Grã-Bretanha em que os jovens que estão começando a vida consigam comprar uma casa, como os meus pais fizeram, como eu fiz. Eles tiveram mais dificuldade do que nós, trabalhando duro, pagando contas, tentando poupar.</u>
+  <u who="andy burnham" role="político" video_time="00:16:59">Mas encarando um empréstimo estudantil que nunca diminui. Hoje digo a eles: estamos trazendo de volta a esperança. Vocês podem ter uma casa própria. Sua Primeira Casa reduzirá o valor da entrada de que vocês precisam. Abrirá a casa própria para aqueles que não têm o respaldo do banco do papai e da mamãe. E prometemos que não nos esqueceremos dos nossos arrendatários de longo prazo. Apresentaremos um projeto de lei antes do Natal para uma reforma, há muito atrasada, do regime de arrendamento de longo prazo.</u>
+  <u who="andy burnham" role="político" video_time="00:17:45">Aos milhões de arrendatários de longo prazo em todo o país, vocês têm a minha palavra. Os dias em que vocês são espremidos até o último centavo estão chegando ao fim.</u>
+  <u who="andy burnham" role="político" video_time="00:18:04">Delegados, esta é a ruptura que estamos fazendo com o pensamento equivocado dos últimos 40 anos. Não ver a moradia apenas como um mercado com vencedores e perdedores, mas como um bem essencial de que todos precisam para uma vida boa. E a próxima etapa da nossa jornada é aplicar essa mesma filosofia à coisa mais básica de todas. A água é um símbolo do que deu errado na Grã-Bretanha. A água é um símbolo do que deu errado na Grã-Bretanha.</u>
+  <u who="andy burnham" role="político" video_time="00:18:52">Um serviço em que os acionistas nunca perdem e o público nunca ganha, do qual alguns sugaram dinheiro fácil enquanto o público pagava a conta do esgoto em nossos mares. Isso fede.</u>
+  <u who="andy burnham" role="político" video_time="00:19:16">Não permitirei que isso continue assim. Hoje posso confirmar que Angela Eagle apresentará ao Parlamento um projeto de lei da água reforçado. A peça central desse projeto será esta: a revogação da proibição ideológica de Margaret Thatcher à propriedade pública de empresas de água. Sim. Isso mesmo. Obrigado, Tom.</u>
+  <u who="andy burnham" role="político" video_time="00:20:18">Ele dará início a uma jornada de 10 anos rumo a um sistema de água muito diferente. Fortalecerá o controle público. Os prefeitos terão novos poderes para responsabilizar as empresas de água.</u>
+  <u who="andy burnham" role="político" video_time="00:20:41">Com consequências mais duras para aquelas que falharem repetidamente. Fechará as brechas usadas para pagar bônus excessivos. Onde empresas privadas servirem ao interesse público, nós as apoiaremos, mas as consequências serão claras para aquelas que não o fizerem, inclusive a retomada do controle ou a propriedade pública. Delegados—</u>
+  <u who="andy burnham" role="político" video_time="00:21:19">delegados, quando as pessoas ouvem a expressão controle público, tenho certeza de que alguns pensam que é contra os negócios. É o oposto. As empresas também precisam que o básico seja funcional e acessível, assim como a economia em geral. Como alguém me disse recentemente, há uma razão pela qual você não pode construir em cima da companhia de água e da companhia de eletricidade no tabuleiro do Banco Imobiliário.</u>
+  <u who="andy burnham" role="político" video_time="00:21:52">Uma das maiores barreiras ao crescimento no Reino Unido é o custo da energia. As empresas britânicas e os consumidores pagam alguns dos custos de energia mais altos da Europa. Dentro de 10 anos, quero que esses custos estejam alinhados aos dos nossos vizinhos. Isso significa reformar um mercado de energia quebrado para que ele sirva melhor ao interesse público. Já estamos assumindo mais controle sobre os nossos preços de eletricidade com uma expansão maciça de energias renováveis e nuclear de produção nacional.</u>
+  <u who="andy burnham" role="político" video_time="00:22:27">Pedi a Miatta que acelere o rompimento do vínculo entre o que pagamos pela energia em casa e o mercado internacional de gás, para baixar as contas.</u>
+  <u who="andy burnham" role="político" video_time="00:22:51">E seremos pragmáticos em relação ao Mar do Norte enquanto construímos uma ponte para um futuro de energia limpa e enfrentamos a crise climática. Mas não é só o preço, o sistema também precisa funcionar melhor. Vocês não acreditariam em quantas empresas reclamam comigo que não conseguem começar a operar porque não conseguem se conectar à rede elétrica. Isso eleva os custos, Isso puxa o crescimento para baixo e segura a Grã-Bretanha.</u>
+  <u who="andy burnham" role="político" video_time="00:23:24">Não teremos o crescimento e o investimento estrangeiro de que precisamos se não resolvermos isso. Então, pela primeira vez, teremos um plano nacional de energia. E traremos de volta o controle democrático local, por meio de um papel mais forte para prefeitos e líderes locais. Mas precisamos ir além. Hoje posso anunciar o nosso plano para a Great British Grid, um novo braço da Great British Energy.</u>
+  <u who="andy burnham" role="político" video_time="00:23:59">Uma empresa de propriedade pública que desafiará as operadoras do setor privado. Ela aumentará a concorrência, reduzirá custos e acelerará as conexões. Para que as empresas possam se expandir e crescer mais rapidamente. Energia, água, moradia, de volta sob um controle público mais forte.</u>
+  <u who="andy burnham" role="político" video_time="00:24:34">Dependemos delas, pagamos por elas e, mais uma vez, teremos poder sobre elas. Sei, porém, que as pessoas não podem esperar para sempre pela mudança. Elas precisam de um alívio agora, e estou determinado a proporcioná-lo. Posso dizer a todos que estão assistindo: vocês verão o IVA desaparecer da Sua conta de luz nesta quinta-feira.</u>
+  <u who="andy burnham" role="político" video_time="00:25:34">Não esperava uma ovação de pé por isso, mas aceito. Obrigado, delegados. A partir de janeiro, vocês poderão viajar durante todo o ano de 2027 por qualquer lugar da Inglaterra, pagando no máximo £2 por uma viagem simples de ônibus.</u>
+  <u who="andy burnham" role="político" video_time="00:26:08">Vocês sabiam que eu não passaria por um discurso de conferência sem mencionar os ônibus, não sabiam? Essas coisas não são tudo, mas espero que vocês as vejam como um sinal, e um sinal forte, da nossa intenção de baixar as suas contas e tarifas enquanto vocês esperam pelas mudanças maiores que virão. Eu adoraria ir mais rápido, mas preciso ser honesto sobre o que o país pode pagar. Vou manter as nossas regras fiscais para reduzir o endividamento e a dívida.</u>
+  <u who="andy burnham" role="político" video_time="00:26:44">A abordagem que estou apresentando hoje é a responsável. Se construirmos uma geração de moradias municipais, economizaremos bilhões do orçamento do auxílio-moradia ao longo da década. Se baixarmos as contas de energia, controlaremos melhor a inflação e apoiaremos a economia. Se mudarmos a forma como apoiamos as pessoas, colocaremos mais gente no trabalho e reduziremos a conta do bem-estar social. Não por meio de cortes brutos— isso nunca deveria ser o jeito trabalhista— mas investindo nas pessoas, no sucesso delas, ajudando-as a chegar aonde querem estar, em vez de pagar pelo fracasso, como o país faz hoje.</u>
+  <u who="andy burnham" role="político" video_time="00:27:32">O nosso plano de controle público é um plano de crescimento. Crescimento de pessoas, lugares e empresas. A verdade é esta: quando abrimos mão do controle público, deixamos as pessoas expostas justamente quando Estava ficando mais difícil crescer e mais difícil envelhecer. O apoio foi retirado de jovens e idosos, e isso faz com que o país pague pelo fracasso em grande escala. Quase um milhão de jovens sem trabalhar nem estudar, milhares de idosos presos em hospitais por falta de um bom atendimento domiciliar.</u>
+  <u who="andy burnham" role="político" video_time="00:28:18">Não podemos nos dar ao luxo de continuar assim. Em 1945, tivemos o Relatório Beveridge. Precisamos de algo semelhante agora, um novo contrato social para o século XXI. Vocês conhecem as minhas antigas ambições de reformar os cuidados sociais.</u>
+  <u who="andy burnham" role="político" video_time="00:28:53">Quando eu era um novo deputado, no início dos anos 2000, fiquei desolado com o que vi quando a minha avó Kitty passou pelo sistema. Estremeci com a dor que isso causou à minha mãe. A aliança de noivado da minha avó arrancada do dedo dela e roubada numa casa de repouso. Um cuidado que não merecia esse nome. E as modestas economias que ela havia juntado ao longo da vida, a começar pela casa onde eu nasci, todas levadas para pagar por isso.</u>
+  <u who="andy burnham" role="político" video_time="00:29:30">Jurei então lutar por algo melhor para a geração dos meus pais. E cá estamos, 25 anos depois. Se alguma coisa, hoje está pior do que naquela época. Que acusação contra a minha geração de políticos, eu incluído. Covardes demais para consertar algo tão básico quanto o cuidado que damos uns aos outros. É de se admirar que as pessoas estejam desistindo da política?</u>
+  <u who="andy burnham" role="político" video_time="00:30:09">Observei de perto as pessoas que cuidaram do meu pai, cuidando dos pais de outras pessoas por salários de miséria. Apoiado. Com enorme habilidade, humor e humanidade, mantendo de algum jeito um sistema esgarçado de pé, e mesmo assim invisíveis para a classe política deste país. Quero falar diretamente hoje aos nossos cuidadores. Vocês não são Invisíveis para mim. Obrigado.</u>
+  <u who="andy burnham" role="político" video_time="00:31:25">Eu vejo vocês, agradeço a vocês e peço desculpas porque a minha profissão decepcionou a de vocês por tanto tempo. Prometo que não deixarei este cargo sem fazer tudo o que puder para mudar as coisas para vocês. E digo o mesmo aos nossos maravilhosos profissionais do NHS.</u>
+  <u who="andy burnham" role="político" video_time="00:32:08">Nós também decepcionamos vocês, deixamos vocês sob pressão intolerável, em risco de burnout, lidando com chamadas ao 999 vindas de um sistema de cuidados em falência. Cuidados em corredores, a realidade diária de vocês. Se continuarmos assim, delegados, o sistema de cuidados sociais quebrado vai quebrar também o NHS, e não podemos deixar que isso aconteça. Jamais devemos deixar que isso aconteça. Este partido que fundou o Serviço Nacional de Saúde.</u>
+  <u who="andy burnham" role="político" video_time="00:32:56">Há apenas uma resposta verdadeira: um serviço de cuidados de alta qualidade, centrado na pessoa, que começa em casa. Um Um sistema nas melhores tradições deste partido, em que todos contribuem e todos são cobertos. Gratuito no momento do uso e sem cobranças de cuidados pagas com a sua pensão estatal básica.</u>
+  <u who="andy burnham" role="político" video_time="00:33:39">Cuidados que sejam sobre pessoas, e não sobre lucro, que deem tranquilidade quanto às necessidades de cuidado na velhice, que protejam as casas e as economias das pessoas e deem o devido reconhecimento aos cuidadores de quem todos nós precisaremos depender em algum momento da vida. Delegados, este é o Serviço Nacional de Cuidados Que construiremos.</u>
+  <u who="andy burnham" role="político" video_time="00:34:25">Nós vamos. Nós vamos. Obrigado, delegados. Vamos fazer isso. Vamos fazer isso. Uma política histórica, tão significativa quanto a criação do próprio NHS e absolutamente essencial para garantir o seu futuro. Economias para o NHS com menos chamadas de ambulância, atendimentos no pronto-socorro e pessoas vulneráveis presas desnecessariamente em hospitais. Começaremos agora a preparar o terreno para o Serviço Nacional de Cuidados e o implantaremos na próxima legislatura.</u>
+  <u who="andy burnham" role="político" video_time="00:35:12">A revisão de Louise Casey nos orientará sobre exatamente como, e Yvette e eu buscaremos construir o máximo de consenso nacional em torno das recomendações dela. Será totalmente financiado, e não por meio de endividamento. Delegados, não vou fingir que algumas dessas coisas não serão difíceis. Aceito que posso pagar um preço político. Mas alguém precisa atravessar a barreira da dor e arrancar o curativo de uma vez.</u>
+  <u who="andy burnham" role="político" video_time="00:35:51">Obrigado. É a liderança que prometi a vocês quando pedi para ser o líder de vocês, e vou exercê-la. Mas também serei honesto. Prometemos no nosso manifesto manter a tripla trava inalterada ao longo desta legislatura. Honrarei essa promessa. Honrarei essa promessa. E farei mais. Farei mais. Essa promessa levará a pensão estatal a um recorde. A partir daí, em abril de 2030, vamos ajustá-la.</u>
+  <u who="andy burnham" role="político" video_time="00:36:42">A pensão estatal continuará a subir todos os anos pelo menos pelos preços ou 2,5%. E manterá o seu valor em relação aos salários ao longo do tempo. Para que os aposentados sempre compartilhem da prosperidade crescente da nação.</u>
+  <u who="andy burnham" role="político" video_time="00:37:09">Mas essa mudança gerará economias significativas, que usaremos para construir o nosso Serviço Nacional de Cuidados. Alguns podem não perceber, mas pessoas mais velhas que têm apenas a pensão estatal, ou só um pouco mais, podem hoje se ver pagando cobranças de cuidados com essa pequena renda. Pelo meu plano, isso não acontecerá mais. Também posso confirmar hoje o nosso compromisso de garantir que os aposentados de baixa renda não serão arrastados para o pagamento de imposto de renda nesta legislatura.</u>
+  <u who="andy burnham" role="político" video_time="00:38:09">Então este é o acordo: uma pensão estatal que sobe todos os anos. Sem cobranças de cuidados e um Serviço Nacional de Cuidados de alta qualidade para dar tranquilidade na velhice. Delegados, vou sair por aí e defender isso— um bom acordo para os nossos aposentados e para as pessoas mais velhas no século XXI.</u>
+  <u who="andy burnham" role="político" video_time="00:38:37">E vou fazer isso Vou fazer isso em memória do meu pai e por completo respeito a todos que cuidaram dele.</u>
+  <u who="andy burnham" role="político" video_time="00:38:54">Delegados, precisaremos mostrar a mesma ousadia com os nossos jovens também. Justo quando crescer ficou mais difícil na era das redes sociais, Seu apoio foi retirado. Serviços para a juventude praticamente extintos no início da década de 2010. Serviços de saúde mental infantil cortados. Famílias deixadas a lutar por apoio para crianças com necessidades educacionais especiais e deficiências. Tantos jovens deixados à deriva por um sistema escolar construído para alguns, não para todos, excessivamente focado no caminho universitário e pouco na educação técnica.</u>
+  <u who="andy burnham" role="político" video_time="00:39:38">Deveríamos mesmo nos surpreender que o número de jovens entre o fim da adolescência e os 20 e poucos anos que recebem benefícios tenha crescido? Delegados, a culpa não é deles, é nossa. Os políticos não dão às pessoas, aos jovens, o apoio de que precisam ao crescer num mundo mais duro e depois os ameaçam, aos 20 e poucos anos, dizendo que vão tirar o que lhes resta. Como isso é justo? Como isso constrói uma sociedade forte?</u>
+  <u who="andy burnham" role="político" video_time="00:40:06">Temos uma escolha, delegados. Ou investimos nos nossos jovens ou pagamos pelo fracasso por meio do sistema de benefícios. Sinceramente, não podemos nos dar ao luxo de fazer as duas coisas. A minha escolha é investir neles. Não podemos assumir o controle do futuro do país se deixarmos tantos dos nossos jovens à deriva em direção a ele.</u>
+  <u who="andy burnham" role="político" video_time="00:40:28">Aguardamos o relatório final da revisão de Alan Milburn, mas posso dizer agora que mudaremos o sistema educacional e o sistema de bem-estar social. Reconstruiremos um sistema de educação abrangente neste país.</u>
+  <u who="andy burnham" role="político" video_time="00:40:53">Com paridade entre o acadêmico e o técnico, com Lucy Powell abrindo o caminho. Trajetórias de boa qualidade para todos a partir dos 14 anos e o apoio certo para os nossos jovens quando precisarem. Um estágio profissional de 45 dias entre os 16 e os 18 anos, uma vaga de aprendiz aos 18 e nunca mais longas esperas por apoio à saúde mental durante o crescimento.</u>
+  <u who="andy burnham" role="político" video_time="00:41:31">Precisaremos de uma reformulação fundamental do sistema de bem-estar social para encontrar o dinheiro para essas oportunidades logo de início. E exigiremos que os jovens aproveitem a ajuda que lhes for oferecida, garantindo apoio no emprego e não deixando aqueles que estão sem trabalho perdendo a confiança e a conexão. Esta é uma abordagem diferente do bem-estar social. Baseia-se numa filosofia de seguridade social. Um país que investe no sucesso das pessoas em vez de abandoná-las e pagar pelo fracasso.</u>
+  <u who="andy burnham" role="político" video_time="00:42:01">Um país assim será muito mais resiliente aos choques que sem dúvida enfrentaremos no resto deste século e mais capaz de cumprir as suas obrigações com a OTAN em defesa. Essa liderança que estamos mostrando em casa será correspondida no cenário internacional. Serei firme no meu apoio à Ucrânia e enfrentarei ameaças de onde quer que venham, seja da Rússia, do Irã ou de qualquer outro lugar. E, delegados, teremos princípios na nossa liderança.</u>
+  <u who="andy burnham" role="político" video_time="00:42:41">Em garantir uma solução de 2 Estados entre Israel e Palestina, como Ed Miliband tem mostrado. Este é o jeito trabalhista, um plano para a Grã-Bretanha que reforçará a nossa seguridade social e a nossa segurança nacional. Não se torna a Grã-Bretanha mais segura deixando uma geração mais jovem sem esperança, presa em casa olhando para telas. Faz-se isso dando esperança aos jovens de novo, e faz-se isso fazendo a nossa economia voltar a crescer com força.</u>
+  <u who="andy burnham" role="político" video_time="00:43:30">Sei que a Grã-Bretanha está cheia de empresas brilhantes que querem que os nossos jovens tenham sucesso e querem empregá-los. E nós as ajudaremos a fazer isso e a crescer juntos. Tenho uma teoria do crescimento. Ela começa por retomar o controle do essencial que faz um lugar funcionar ou não. Vocês precisam ter esse controle sobre as coisas fundamentais de que todos precisam. E, a partir daí, você descentraliza mais poder para os lugares, para colocá-los no comando e para que decidam o seu próprio destino.</u>
+  <u who="andy burnham" role="político" video_time="00:44:02">E então, ao fazer essas coisas, otimizamos as condições para as empresas crescerem e fazendo— apoiamos as nossas pessoas para que elas estejam lá para as nossas empresas empregarem. Delegados, desenvolvi essa abordagem ao longo de uma década liderando a região metropolitana de crescimento mais rápido do país, e não poderia ter ficado mais orgulhoso de passar o cargo a Bev Craig como a nova prefeita da Grande Manchester.</u>
+  <u who="andy burnham" role="político" video_time="00:44:39">É o contrário de quando Alex Ferguson passou o bastão a David Moyes. Acho, sabe, que este é David Moyes passando o bastão a Alex Ferguson, acho.</u>
+  <u who="andy burnham" role="político" video_time="00:44:55">Temos uma teoria do crescimento e a construímos também com Steve quando deixamos Westminster juntos e com os outros prefeitos que estão conosco hoje. E vocês podem ver a mudança, podem sentir nesta cidade, não podem? É incrível, não é, estar aqui, ver isso todos os anos, porque voltamos todos os anos. Vemos a mudança todos os anos. E como é bom ver isso?</u>
+  <u who="andy burnham" role="político" video_time="00:45:20">E nós queremos isso em todo lugar, não queremos? Em cada lugar representado neste salão de conferências hoje. E é isso que pretendo fazer. Pretendo pegar o que fiz em Manchester, um plano de bom crescimento, e levá-lo do centro do governo para cada CEP da Grã-Bretanha. O Número 10 Norte, esse é o seu papel, trabalhando em perfeita sintonia com John. E o Tesouro, supervisionando a reconfiguração do Estado britânico, a reconstrução da resiliência nas nossas comunidades e a reindustrialização das nossas regiões, mudando as compras governamentais para que apoiem a indústria britânica, como os nossos sindicatos com razão nos pressionaram a fazer.</u>
+  <u who="andy burnham" role="político" video_time="00:46:13">E isso exigirá uma mudança de cultura em Whitehall. O prefeito da Região Metropolitana de Liverpool não deveria ter precisado lutar tanto contra Whitehall quanto lutou para conseguir uma nova balsa construída às margens do rio Mersey.</u>
+  <u who="andy burnham" role="político" video_time="00:46:34">E que trabalho ele está fazendo. Liverpool crescendo mais rápido do que a economia do Reino Unido. Quantas vezes Tivemos a chance de dizer isso em nossas vidas? Que coisa brilhante poder dizer. Lugares descartados pelos poderes constituídos no passado agora estão provando que eles estavam errados. Trazendo grandes nomes de IA, como a Kyndryl, para a cidade. Vejo um enorme potencial para mais disso em todas as partes da Grã-Bretanha.</u>
+  <u who="andy burnham" role="político" video_time="00:46:59">Vejo startups e scale-ups surgindo aos montes das nossas universidades de nível mundial. Vejo empresas de todo o país Fazendo a sua parte e prontas para fazer mais. Como Gordon Brown disse, podemos ser a nação da inovação do mundo, e ele tem razão. Nós podemos.</u>
+  <u who="andy burnham" role="político" video_time="00:47:25">Uma nação em quem os outros confiem para ser líder global em IA, um mediador imparcial. Quando a Grã-Bretanha assumir a presidência. Do G20 no ano que vem, mostrarei a nossa confiança renovada como país, e a mostrarei ao mundo colocando a IA no centro do palco. E a Grã-Bretanha então trabalhará para desenvolver um novo código global para aproveitar os seus benefícios, ao mesmo tempo em que será lúcida quanto aos seus riscos. Assim como Gordon fez na crise financeira de 2008, a Grã-Bretanha o fará de novo: dará um passo à frente e reunirá as pessoas em torno do que é certo para o futuro, garantindo a nossa prosperidade, mas também a nossa segurança, e particularmente a segurança dos nossos jovens.</u>
+  <u who="andy burnham" role="político" video_time="00:48:15">Lideramos a primeira revolução industrial do mundo a partir das Midlands e do Norte da Inglaterra, então por que não podemos liderar a próxima? Podemos, delegados, e vamos. Nós podemos.</u>
+  <u who="andy burnham" role="político" video_time="00:48:36">Somos um país cheio de aspiração da classe trabalhadora, e seremos o governo que a destrava. Delegados, há uma última coisa que precisamos mudar para que o nosso plano para a Grã-Bretanha tenha sucesso: a nossa política. Westminster valoriza mais marcar pontos do que resolver problemas, e é por isso que tantas coisas ficaram sem solução por tanto tempo. Se queremos mudar a Grã-Bretanha, precisamos mudar a nós mesmos. Trabalharei o mais duro que puder para obter o máximo de apoio suprapartidário ao nosso plano para a Grã-Bretanha.</u>
+  <u who="andy burnham" role="político" video_time="00:49:17">Se conseguirmos isso, será transmitida uma mensagem de confiança e estabilidade aos mercados e ao mundo sobre a direção futura da Grã-Bretanha. É por isso que decidi fazer este discurso de conferência muito diferente. Não podemos ter sucesso aos olhos do mundo se continuarmos com os níveis de turbulência política que vimos nos últimos tempos. Está sempre na minha mente que sou o 7º primeiro-ministro em 10 anos.</u>
+  <u who="andy burnham" role="político" video_time="00:49:44">É por isso que quero sustentar o nosso plano para a Grã-Bretanha com uma nova política. Todos nós teremos falhado nos nossos deveres públicos se continuarmos como estamos e abrirmos a porta do Número 10 a um governo divisivo com menos de 30% dos votos ou menos. E não devemos fazer isso, delegados.</u>
+  <u who="andy burnham" role="político" video_time="00:50:13">Nos últimos anos, vocês votaram duas vezes a favor da reforma eleitoral. Eu ouvi vocês. Concordo com vocês. E hoje anuncio uma nova Comissão Nacional de Reforma Eleitoral.</u>
+  <u who="andy burnham" role="político" video_time="00:50:55">Convido todos os partidos políticos a fazerem parte do seu trabalho. Disputaremos a próxima eleição com o compromisso, em manifesto, de mudar o sistema eleitoral para que o voto de todos conte e a voz de todos seja ouvida. Obrigado.</u>
+  <u who="andy burnham" role="político" video_time="00:51:25">Como vocês podem ver, o que estou delineando é um programa para o futuro da Grã-Bretanha mais sério e mais bem pensado do que o oferecido às pessoas em uma geração. Reconheço que parte disso é difícil. Aceito que as pessoas, inclusive neste salão, não concordarão com todas as partes. Mas acredito que é disso que precisamos. Coisas pequenas não nos farão superar o que são tempos difíceis. Precisamos ser maiores e ter a coragem das nossas convicções.</u>
+  <u who="andy burnham" role="político" video_time="00:52:07">Acredito que podemos mudar o rumo da Grã-Bretanha, mas isso exige que pensemos maior sobre o que precisamos fazer. Farei o melhor que puder para encontrar um terreno comum, mas deixem-me ser claro: onde eu não puder concordar com outros, lutarei com firmeza pelo que acredito ser certo e pelo que acredito ser do melhor interesse deste país. Obrigado.</u>
+  <u who="andy burnham" role="político" video_time="00:53:18">Obrigado, a todos. No dia em que o meu pai morreu, o primeiro-ministro escocês disse que eu seria o último primeiro-ministro do Reino Unido. Cito isso não para buscar simpatia nem para criticar John Swinney. Não acho que ele soubesse da notícia naquele momento. E, de qualquer forma, o meu pai, Roy, teria sido o primeiro a defender o direito dele de dizer isso. Conto isso porque quero que vocês saibam como isso me fez sentir.</u>
+  <u who="andy burnham" role="político" video_time="00:54:05">Totalmente determinado a provar que ele estava errado. Apesar dos seus defeitos, este país deu ao meu pai uma boa vida, e deu aos filhos dele oportunidades que ele não teve para si mesmo.</u>
+  <u who="andy burnham" role="político" video_time="00:54:57">Ele reconheceu isso e foi grato por isso. E tinha tanto orgulho do que Nick, John e eu fizemos com elas. Se ao menos, se ao menos ele pudesse ter apreciado aquele momento da família em Downing Street. O filho de um homem que foi reprovado no 11+, tornando-se primeiro-ministro. Obrigado.</u>
+  <u who="andy burnham" role="político" video_time="00:55:51">O fato de isso poder acontecer neste país não teria passado despercebido por ele. Ele poderia ter ido à universidade, mas os tempos eram diferentes, então não foi uma opção. Mas ele votou toda vez, religiosamente, nos governos trabalhistas que mudaram a educação para que os seus filhos pudessem fazer isso.</u>
+  <u who="andy burnham" role="político" video_time="00:56:26">O Reino Unido que o meu pai representava é aquele em que acredito. Uma união de nações que deu ao mundo os sindicatos e o movimento cooperativista. O Serviço Nacional de Saúde. Um país que enfrentou o fascismo. Um país de solidariedade, não de separação. Essa é a Grã-Bretanha que o meu pai representava. Mais 2 minutos.</u>
+  <u who="andy burnham" role="político" video_time="00:57:20">A Grã-Bretanha não é perfeita. Ela pode ser melhor, e nós faremos com que seja. Mas ela ainda representa algo que vale a pena salvar, pelo qual vale a pena lutar.</u>
+  <u who="andy burnham" role="político" video_time="00:57:43">E seremos sempre mais fortes enfrentando juntos um mundo em mudança. Em vez de separados. Então vou usar este cargo para construir o tipo de Grã-Bretanha que o meu pai queria ver e lutar com tudo o que tenho para mantê-la unida. Não o último primeiro-ministro do Reino Unido, e sim o primeiro a reconfigurá-lo para fazê-lo funcionar para todas as pessoas e lugares. Levando o poder para fora de Whitehall e para dentro de cada CEP do País de Gales, da Escócia, da Irlanda do Norte e da Inglaterra, e reduzindo as divisões entre pessoas e lugares.</u>
+  <u who="andy burnham" role="político" video_time="00:58:33">O primeiro primeiro-ministro a romper com a política de sempre. Acredito que o plano que apresentei hoje não só nos manterá unidos, como nos permitirá voltar a nos erguer. A Grã-Bretanha voltar a se erguer.</u>
+  <u who="andy burnham" role="político" video_time="00:58:58">E seremos uma Grã-Bretanha confiante do seu lugar no mundo. Ele mudou dramaticamente desde 2016, e, no espírito deste discurso, temos que ser honestos. O Brexit não nos deu controle.</u>
+  <u who="andy burnham" role="político" video_time="00:59:28">Perdemos parte do controle que tínhamos sobre a nossa economia, já que uma década de baixo crescimento nos colocou numa posição mais fraca. E perdemos parte do nosso controle sobre a imigração. No nível mais fundamental, este é um debate sobre justiça. Por isso entendo a raiva com o que está acontecendo no Canal da Mancha. Shabana fez um ótimo trabalho ao restabelecer o nosso controle sobre o sistema.</u>
+  <u who="andy burnham" role="político" video_time="00:59:59">O número de pessoas que chegam em pequenos barcos caiu 40% em relação ao ano passado, e 50% em relação ao início da década de 2020. A migração líquida caiu mais de 80% desde o pico da era de Boris Johnson. Delegados, fazemos essas mudanças, mas sempre seremos gratos, sempre, e agradecemos àquelas pessoas que vieram para cá e estão contribuindo para o nosso país. Obrigado a elas.</u>
+  <u who="andy burnham" role="político" video_time="01:00:39">Mas o controle sobre a imigração foi enfraquecido quando perdemos a colaboração com os nossos parceiros europeus, e ainda estamos trabalhando duro para recuperá-la. Ainda este ano haverá uma cúpula Reino Unido-União Europeia em que um dos temas da pauta será como trabalhar melhor juntos em relação à imigração. E, além disso, trabalharemos para garantir ganhos para as nossas indústrias britânicas mais prejudicadas pelo Brexit. Delegados, esses são passos concretos importantes, mas não são suficientes.</u>
+  <u who="andy burnham" role="político" video_time="01:01:08">Digo isto a vocês e ao país. Não daremos à Grã-Bretanha o caminho claro de que precisamos para o resto deste século até decidirmos sobre uma relação de longo prazo com o que ainda é o nosso maior mercado. E não posso dizer a vocês, com sinceridade, que onde estamos é bom o suficiente. O Brexit fez mais mal do que bem.</u>
+  <u who="andy burnham" role="político" video_time="01:01:49">Precisamos restaurar um nível mais alto de crescimento e prosperidade para a Grã-Bretanha. Então aproveitarei a oportunidade para expor a vocês, para expor ao país o que acredito serem as diferentes opções para a relação de longo prazo da Grã-Bretanha com os nossos parceiros europeus. E há opções diferentes. E verei se conseguimos chegar a um consenso em torno de uma que nos dê clareza sobre a nossa posição e o futuro do continente em que vivemos.</u>
+  <u who="andy burnham" role="político" video_time="01:02:37">Bem, delegados, eu avisei que este discurso seria diferente, não avisei? Mas acho que este momento da história do nosso país exige isso. 1945. 1964, 1997, agora. Todos momentos de governos trabalhistas. Todos momentos em que a Grã-Bretanha redescobriu um senso de esperança. Quando subi Downing Street no meu primeiro dia no cargo, prometi dar à Grã-Bretanha um disjuntor. Para nos tirar do atoleiro em que estamos.</u>
+  <u who="andy burnham" role="político" video_time="01:03:14">Para nos fazer voltar a acreditar. Digo isto a todos que estão assistindo em casa. Vocês podem discordar de parte ou de tudo o que eu disse hoje, mas dei a vocês o que vocês costumam dizer que falta na política: honestidade, ideias e uma direção clara para o país que todos amamos. Obrigado.</u>
+  <u who="andy burnham" role="político" video_time="01:04:00">Agora quero fazer um apelo direto a vocês. Se concordam com o suficiente do que eu disse, Apoiem este plano e apoiem uns aos outros. É hora de pôr um ponto final, de ir além de uma década de deriva e divisão, de trazer de volta ao nosso país um espírito de união e positividade, de destravar a aspiração da classe trabalhadora que ainda está lá em cada CEP desta grande terra.</u>
+  <u who="andy burnham" role="político" video_time="01:04:41">Todos juntos, agora, nós podemos fazer isso. Voltaremos a acreditar. Voltaremos a ter esperança. Obrigado, delegados. Muito obrigado. Obrigado, a todos. Obrigado.</u>
+</doc></script>
+    <script id="data-questions" type="text/plain">PERGUNTAS DE AVALIADOR - Discurso de Andy Burnham à conferência do Partido Trabalhista (2026)
+Tradução simultânea inglês-português: justificativa de escolhas de tradução
+
+Observação: cada horário aponta para um pouco antes da expressão (cerca de uma frase antes, ou o começo da fala), para dar o contexto. A expressão aparece logo depois. Os segundos são estimativas, então vale conferir no vídeo.
+
+Formato de cada item:
+Question: pergunta do avaliador, em inglês.
+Pergunta: a mesma pergunta traduzida para o português.
+Resposta: a justificativa esperada.
+
+==================================================
+
+1. "doom-scrolling" (0:21)
+
+Question: At about 0 minutes 21 seconds, how did you translate "doom-scrolling" in "We stop doom-scrolling on posts running Britain down."? Justify your answer.
+
+Pergunta: Por volta de 0min21s, como você traduziu "doom-scrolling" em "We stop doom-scrolling on posts running Britain down."? Justifique a sua resposta.
+
+Resposta: Traduzi por "rolar a tela atrás de más notícias". "Doomscrolling" é um neologismo recente, e ainda não existe um equivalente consolidado em português. Manter o anglicismo seria arriscado, porque nem todo o público o conhece. Por isso desdobrei a ideia nas duas partes que ela contém: o gesto de rolar a tela e a busca compulsiva por más notícias. "Running down" virou "só falam mal", que é o registro oral e traz a ideia de desvalorizar o país.
+
+--------------------------------------------------
+
+2. "deposit" (1:12)
+
+Question: At about 1 minute 12 seconds, how did you translate "deposit" in "She walked 3 miles out of the bombed-out city after the war to put a deposit down on a house without Jimmy's knowledge, actually."? Justify your answer.
+
+Pergunta: Por volta de 1min12s, como você traduziu "deposit" em "She walked 3 miles out of the bombed-out city after the war to put a deposit down on a house without Jimmy's knowledge, actually."? Justifique a sua resposta.
+
+Resposta: Traduzi por "dar a entrada numa casa". "Deposit" é um falso amigo: "depósito" em português remete a conta bancária ou armazenamento. No contexto de compra de imóvel, o termo é "entrada", o primeiro pagamento do financiamento. "Without Jimmy's knowledge" virou "sem que Jimmy soubesse", que é mais natural na fala do que "sem o conhecimento de Jimmy". "Actually" saiu como "aliás", porque ela acrescenta a informação como um comentário de última hora.
+
+--------------------------------------------------
+
+3. "Chancellor" (1:29)
+
+Question: At about 1 minute 29 seconds, how did you translate "Chancellor" in "I won't do that to you, John, wherever you are, Chancellor."? Justify your answer.
+
+Pergunta: Por volta de 1min29s, como você traduziu "Chancellor" em "I won't do that to you, John, wherever you are, Chancellor."? Justifique a sua resposta.
+
+Resposta: Traduzi por "ministro da Fazenda". "Chanceler" é falso amigo, porque no Brasil designa o ministro das Relações Exteriores. O "Chancellor" britânico é o responsável pelas finanças do governo, e o equivalente funcional para o público brasileiro é "ministro da Fazenda". A brincadeira, em que ele promete não fazer com o ministro o que a avó fez com o marido, só funciona se o ouvinte entender que se trata de quem cuida do dinheiro público. "Chanceler do Tesouro" seria o título exato, mas soaria estranho e pesado numa fala curta.
+
+--------------------------------------------------
+
+4. "the powers that be" (3:08)
+
+Question: At about 3 minutes 8 seconds, how did you translate "the powers that be" in "That sense of the powers that be pulling against the people, not with them."? Justify your answer.
+
+Pergunta: Por volta de 3min08s, como você traduziu "the powers that be" em "That sense of the powers that be pulling against the people, not with them."? Justifique a sua resposta.
+
+Resposta: Traduzi por "os poderes constituídos". A expressão se refere aos que detêm a autoridade, o sistema estabelecido, sem apontar ninguém em particular. "Os poderosos" seria mais coloquial e acusatório do que o tom dele, e "o establishment" é anglicismo que nem todos reconhecem. "Poderes constituídos" mantém o sentido institucional e a vagueza da expressão original. "Pulling against... not with" virou "puxam contra... e não com", que preserva a imagem de duas forças em direções opostas.
+
+--------------------------------------------------
+
+5. "vested interests" (8:05)
+
+Question: At about 8 minutes 5 seconds, how did you translate "vested interests" in "A country run for vested interests, not in the public interest"? Justify your answer.
+
+Pergunta: Por volta de 8min05s, como você traduziu "vested interests" em "A country run for vested interests, not in the public interest"? Justifique a sua resposta.
+
+Resposta: Traduzi por "interesses particulares". "Vested interests" são interesses já enraizados de grupos que se beneficiam do estado de coisas e resistem a mudá-lo. O contraste direto é com "public interest", e "particulares" faz esse contraste funcionar em português ("particulares" × "público"). Alternativas aceitáveis seriam "interesses privados" ou "interesses estabelecidos". Evitei "interesses adquiridos", que é calque do termo jurídico e não se encaixa aqui.
+
+--------------------------------------------------
+
+6. "commonwealth" (9:28)
+
+Question: At about 9 minutes 28 seconds, how did you translate "commonwealth" in "Suddenly, the commonwealth we had created, this party, the wealth we had created for the many was seen as an opportunity for the few."? Justify your answer.
+
+Pergunta: Por volta de 9min28s, como você traduziu "commonwealth" em "Suddenly, the commonwealth we had created, this party, the wealth we had created for the many was seen as an opportunity for the few."? Justifique a sua resposta.
+
+Resposta: Traduzi por "patrimônio comum". Aqui há uma armadilha: "Commonwealth" em maiúscula é a Comunidade das Nações, a organização dos antigos territórios britânicos. Mas o orador usa a palavra em sentido literal e antigo, "common wealth", a riqueza compartilhada por todos, e a emparelha com "the wealth we had created for the many". Por isso "patrimônio comum" é a escolha que preserva essa ideia de algo coletivo construído ao longo do tempo. "Comunidade de nações" seria um erro de sentido.
+
+--------------------------------------------------
+
+7. "postcode" (11:36)
+
+Question: At about 11 minutes 36 seconds, how did you translate "postcode" in "And from there, good growth in every postcode, hope in every heart."? Justify your answer.
+
+Pergunta: Por volta de 11min36s, como você traduziu "postcode" em "And from there, good growth in every postcode, hope in every heart."? Justifique a sua resposta.
+
+Resposta: Traduzi por "em cada CEP". "Postcode" é o código postal britânico, e o orador o usa no sentido figurado de "em todo canto do país, de cada bairro". No Brasil, o equivalente do código postal é o CEP, que o ouvinte reconhece de imediato e que mantém o mesmo recurso retórico. "Código postal" é o termo de Portugal e soaria estranho aqui. "Em cada canto do país" perderia a imagem, mas seria uma alternativa segura.
+
+--------------------------------------------------
+
+8. "Right to Buy" (12:31)
+
+Question: At about 12 minutes 31 seconds, how did you translate "Right to Buy" in "Over a million people are in that position on housing waiting lists, almost exactly the same number as the homes we lost through Right to Buy in the 1980s."? Justify your answer.
+
+Pergunta: Por volta de 12min31s, como você traduziu "Right to Buy" em "Over a million people are in that position on housing waiting lists, almost exactly the same number as the homes we lost through Right to Buy in the 1980s."? Justifique a sua resposta.
+
+Resposta: Traduzi por "o Direito de Compra". É o nome de uma política britânica dos anos 1980 que permitiu aos inquilinos de moradias públicas comprá-las, e que não tem equivalente no Brasil. Não existe tradução consolidada, então usei um calque curto que mantém o nome da política reconhecível. Explicar por extenso ("programa de venda de moradias públicas aos inquilinos") seria mais claro, mas inviável numa simultânea. "Homes we lost" ficou como "moradias que perdemos", que indica a perda do patrimônio público.
+
+--------------------------------------------------
+
+9. "council house" (13:40)
+
+Question: At about 13 minutes 40 seconds, how did you translate "council house" in "From there, the biggest council house building programme since the post-war era, led by Angela Rayner."? Justify your answer.
+
+Pergunta: Por volta de 13min40s, como você traduziu "council house" em "From there, the biggest council house building programme since the post-war era, led by Angela Rayner."? Justifique a sua resposta.
+
+Resposta: Traduzi por "moradias municipais". "Council house" é uma realidade britânica: moradia de propriedade da autoridade local, alugada a preço social. No Brasil não há equivalente exato. "Casas populares" evoca programas como o Minha Casa Minha Vida, em que o beneficiário se torna proprietário, o que é diferente. "Moradias municipais" transmite a propriedade pública e local. Também escolhi "moradia" e não "casa", porque inclui apartamentos.
+
+--------------------------------------------------
+
+10. "bank of mum and dad" (17:15)
+
+Question: At about 17 minutes 15 seconds, how did you translate "bank of mum and dad" in "It will open up home ownership to those not backed by the bank of mum and dad."? Justify your answer.
+
+Pergunta: Por volta de 17min15s, como você traduziu "bank of mum and dad" em "It will open up home ownership to those not backed by the bank of mum and dad."? Justifique a sua resposta.
+
+Resposta: Traduzi por "o banco do papai e da mamãe". É uma expressão irônica britânica para a ajuda financeira dos pais, em geral para dar a entrada de um imóvel. A imagem do banco funciona em português e a brincadeira também é conhecida no Brasil, então mantive a metáfora. "Backed" virou "respaldo", que mantém o vocabulário de garantia financeira. Uma tradução neutra como "sem ajuda financeira dos pais" seria segura, mas perderia o humor.
+
+--------------------------------------------------
+
+11. "leaseholders" (17:22)
+
+Question: At about 17 minutes 22 seconds, how did you translate "leaseholders" in "And we promise we will not forget our leaseholders."? Justify your answer.
+
+Pergunta: Por volta de 17min22s, como você traduziu "leaseholders" em "And we promise we will not forget our leaseholders."? Justifique a sua resposta.
+
+Resposta: Traduzi por "arrendatários de longo prazo". No sistema britânico de "leasehold", o morador é dono do imóvel por um prazo fixo e paga taxas ao dono do terreno, e isso não tem equivalente no Brasil. "Locatários" seria um erro, porque são inquilinos de aluguel. "Proprietários" esconderia o problema que o discurso aponta, o de que eles dependem de um terceiro. "Arrendatário de longo prazo" aproxima o conceito sem inventar um termo.
+
+--------------------------------------------------
+
+12. "It stinks" (18:52)
+
+Question: At about 18 minutes 52 seconds, how did you translate "It stinks" in "A service where the shareholders never lose and the public never win, from which some have siphoned out easy money while the public picked up the bill for the sewage in our seas. It stinks."? Justify your answer.
+
+Pergunta: Por volta de 18min52s, como você traduziu "It stinks" em "A service where the shareholders never lose and the public never win, from which some have siphoned out easy money while the public picked up the bill for the sewage in our seas. It stinks."? Justifique a sua resposta.
+
+Resposta: Traduzi por "Isso fede". A frase tem sentido duplo: o esgoto de fato cheira mal, e a situação é moralmente podre. "Fede" mantém esse duplo sentido. "Cheira mal" seria mais fraco e formal, e "é podre" perderia a relação com o esgoto. "Picked up the bill" virou "pagava a conta", e "siphoned out" virou "sugaram", que mantém a imagem de tirar algo aos poucos de um sistema.
+
+--------------------------------------------------
+
+13. "Monopoly board" (21:30)
+
+Question: At about 21 minutes 30 seconds, how did you translate "Monopoly board" in "As someone said to me recently, there's a reason why you can't build all over the waterworks and the electric company on the Monopoly board."? Justify your answer.
+
+Pergunta: Por volta de 21min30s, como você traduziu "Monopoly board" em "As someone said to me recently, there's a reason why you can't build all over the waterworks and the electric company on the Monopoly board."? Justifique a sua resposta.
+
+Resposta: Traduzi por "tabuleiro do Banco Imobiliário", com "companhia de água" e "companhia de eletricidade". No Brasil, o jogo é conhecido como Banco Imobiliário, e as casas de serviços públicos também existem como companhias. Como a referência é cultural e o ouvinte precisa reconhecê-la na hora, adaptei o nome do jogo. O ponto da piada é que, no jogo, essas casas não recebem construções, e isso cobre a ideia de que serviços essenciais não são terreno de especulação.
+
+--------------------------------------------------
+
+14. "social care" (28:31)
+
+Question: At about 28 minutes 31 seconds, how did you translate "social care" in "You know of my long-held ambitions to reform social care."? Justify your answer.
+
+Pergunta: Por volta de 28min31s, como você traduziu "social care" em "You know of my long-held ambitions to reform social care."? Justifique a sua resposta.
+
+Resposta: Traduzi por "cuidados sociais". "Social care" é um falso amigo perigoso: "assistência social" no Brasil designa benefícios e serviços para pessoas em vulnerabilidade, como o CRAS. No Reino Unido, o termo se refere ao cuidado de longa duração para idosos e pessoas com deficiência, em casa ou em instituições. "Cuidados sociais" preserva a palavra "cuidados" e evita a armadilha. "Cuidados de longa duração" seria mais técnico e também correto, mas é mais longo.
+
+--------------------------------------------------
+
+15. "free at the point of use" (33:11)
+
+Question: At about 33 minutes 11 seconds, how did you translate "free at the point of use" in "Free at the point of use and no care charges paid out of your basic state pension."? Justify your answer.
+
+Pergunta: Por volta de 33min11s, como você traduziu "free at the point of use" em "Free at the point of use and no care charges paid out of your basic state pension."? Justifique a sua resposta.
+
+Resposta: Traduzi por "gratuito no momento do uso". É a fórmula tradicional do sistema de saúde britânico: o serviço é pago por impostos, e o usuário não paga nada na hora em que o utiliza. "Gratuito" sozinho sugeriria que não custa nada a ninguém, o que não é o caso. "No momento do uso" mantém a nuance. "Livre" seria um erro, porque "free" aqui quer dizer "sem custo", e não "com liberdade". "No care charges paid out of your basic state pension" virou "sem cobranças de cuidados pagas com a sua pensão estatal básica".
+
+--------------------------------------------------
+
+16. "A&E" (34:34)
+
+Question: At about 34 minutes 34 seconds, how did you translate "A&E" in "NHS savings from fewer ambulance callouts, A&E admissions, and vulnerable people being stuck unnecessarily in hospital."? Justify your answer.
+
+Pergunta: Por volta de 34min34s, como você traduziu "A&E" em "NHS savings from fewer ambulance callouts, A&E admissions, and vulnerable people being stuck unnecessarily in hospital."? Justifique a sua resposta.
+
+Resposta: Traduzi por "atendimentos no pronto-socorro". "A&E" é "Accident and Emergency", a sigla do setor de emergência dos hospitais britânicos, que o público brasileiro não reconhece, e "pronto-socorro" é o equivalente funcional. "Admissions" é outro falso amigo: "admissões" sugeriria entrada formal, e "internações" indicaria que a pessoa ficou no hospital. Aqui são as vezes em que alguém foi atendido no setor, e por isso "atendimentos". "Ambulance callouts" virou "chamadas de ambulância".
+
+--------------------------------------------------
+
+17. "rip the plaster off" (35:39)
+
+Question: At about 35 minutes 39 seconds, how did you translate "rip the plaster off" in "But someone has to go through the pain barrier and rip the plaster off."? Justify your answer.
+
+Pergunta: Por volta de 35min39s, como você traduziu "rip the plaster off" em "But someone has to go through the pain barrier and rip the plaster off."? Justifique a sua resposta.
+
+Resposta: Traduzi por "atravessar a barreira da dor e arrancar o curativo de uma vez". "Plaster" é falso amigo de "gesso" ou "reboco"; no inglês britânico é o curativo adesivo. A expressão significa fazer de uma vez a coisa dolorosa, em vez de adiá-la. "Arrancar o curativo de uma vez" mantém a imagem e a ideia de rapidez. "Pain barrier" vem do atletismo e virou "barreira da dor", que também funciona em português. "Esparadrapo" seria uma opção, mas é mais antiquada.
+
+--------------------------------------------------
+
+18. "triple lock" (36:03)
+
+Question: At about 36 minutes 3 seconds, how did you translate "triple lock" in "We promised in our manifesto to keep the triple lock unchanged throughout this Parliament."? Justify your answer.
+
+Pergunta: Por volta de 36min03s, como você traduziu "triple lock" em "We promised in our manifesto to keep the triple lock unchanged throughout this Parliament."? Justifique a sua resposta.
+
+Resposta: Traduzi por "a tripla trava". É o nome do mecanismo britânico de reajuste das pensões, que garante o aumento pelo maior entre três critérios, e não há termo estabelecido em português. Fiz um calque, em que "trava" mantém a ideia de proteção ou piso, e o contexto, a pensão, deixa claro de que se trata. "Tripla garantia" também seria aceitável. Já "this Parliament" virou "esta legislatura", e não "este Parlamento", porque refere ao período de mandato e não à instituição.
+
+--------------------------------------------------
+
+19. "comprehensive education" (40:28)
+
+Question: At about 40 minutes 28 seconds, how did you translate "comprehensive education" in "We will rebuild a system of comprehensive education in this country."? Justify your answer.
+
+Pergunta: Por volta de 40min28s, como você traduziu "comprehensive education" em "We will rebuild a system of comprehensive education in this country."? Justifique a sua resposta.
+
+Resposta: Traduzi por "sistema de educação abrangente". No Reino Unido, "comprehensive" designa as escolas não seletivas, que aceitam alunos de todos os níveis, por oposição às "grammar schools", que selecionam por exame. "Compreensivo" seria falso amigo, porque significa "que compreende" ou "tolerante". Como no Brasil a escola pública não é seletiva, não há um termo pronto, e "abrangente" aproxima a ideia. "Ensino não seletivo" explicaria melhor, mas é mais longo.
+
+--------------------------------------------------
+
+20. "welfare" (41:38)
+
+Question: At about 41 minutes 38 seconds, how did you translate "welfare" in "This is a different approach to welfare."? Justify your answer.
+
+Pergunta: Por volta de 41min38s, como você traduziu "welfare" em "This is a different approach to welfare."? Justifique a sua resposta.
+
+Resposta: Traduzi por "bem-estar social". "Welfare" é falso amigo de "bem-estar" no sentido de conforto: no Reino Unido, designa o sistema de benefícios e apoio do Estado. "Assistência social" seria outra armadilha, porque no Brasil designa um conjunto específico de serviços para pessoas vulneráveis. "Bem-estar social" evoca o "Estado de bem-estar" e é o termo mais próximo. Em contexto mais técnico, "sistema de benefícios sociais" seria alternativa mais precisa.
+
+--------------------------------------------------
+
+21. "devolve" (43:49)
+
+Question: At about 43 minutes 49 seconds, how did you translate "devolve" in "And from there, you devolve more power to places to put them in charge and decide their own destiny."? Justify your answer.
+
+Pergunta: Por volta de 43min49s, como você traduziu "devolve" em "And from there, you devolve more power to places to put them in charge and decide their own destiny."? Justifique a sua resposta.
+
+Resposta: Traduzi por "descentralizar". "Devolve" é falso amigo de "devolver", que em português quer dizer restituir. Na política britânica, "devolve" é transferir poder do governo central para governos regionais ou locais. "Descentralizar" expressa isso. "Delegar" também seria aceitável, mas dá a ideia de que o poder continua sendo do centro. Usei "colocá-los no comando" para "put them in charge", que mantém a ideia de autonomia.
+
+--------------------------------------------------
+
+22. "prospectus" (51:25)
+
+Question: At about 51 minutes 25 seconds, how did you translate "prospectus" in "As you can see, what I am outlining is a more serious and thought-through prospectus for the future of Britain than people have been offered in a generation."? Justify your answer.
+
+Pergunta: Por volta de 51min25s, como você traduziu "prospectus" em "As you can see, what I am outlining is a more serious and thought-through prospectus for the future of Britain than people have been offered in a generation."? Justifique a sua resposta.
+
+Resposta: Traduzi por "programa". "Prospectus" é falso amigo de "prospecto", que em português é um folheto informativo, como o de um remédio ou de uma oferta financeira. Aqui significa um plano detalhado que se apresenta aos eleitores. "Programa" ou "proposta" cobrem esse sentido, e "programa" combina com o vocabulário político. "Thought-through" virou "bem pensado", que é natural na fala.
+
+--------------------------------------------------
+
+23. "First Minister" (53:18)
+
+Question: At about 53 minutes 18 seconds, how did you translate "First Minister" in "On the day my dad died, the Scottish First Minister said I would be the last Prime Minister of the United Kingdom."? Justify your answer.
+
+Pergunta: Por volta de 53min18s, como você traduziu "First Minister" em "On the day my dad died, the Scottish First Minister said I would be the last Prime Minister of the United Kingdom."? Justifique a sua resposta.
+
+Resposta: Traduzi por "o primeiro-ministro escocês". "First Minister" é o chefe do governo da Escócia, um cargo diferente do de "Prime Minister" do Reino Unido, e a imprensa brasileira costuma chamá-lo de "primeiro-ministro da Escócia". O risco é a confusão com o "último primeiro-ministro do Reino Unido" na mesma frase, e por isso o adjetivo "escocês" e o complemento "do Reino Unido" são importantes para separar os dois. "Ministro-chefe" soaria artificial.
+
+--------------------------------------------------
+
+24. "11+" (55:17)
+
+Question: At about 55 minutes 17 seconds, how did you translate "11+" in "The son of a man who failed his 11+, becoming Prime Minister."? Justify your answer.
+
+Pergunta: Por volta de 55min17s, como você traduziu "11+" em "The son of a man who failed his 11+, becoming Prime Minister."? Justifique a sua resposta.
+
+Resposta: Traduzi por "reprovado no 11+". É um exame feito aos 11 anos que decidia se o aluno iria para uma escola seletiva, a "grammar school", ou para uma escola comum, e não tem equivalente no Brasil. Mantive o nome "11+", que o contexto torna compreensível: o pai não pôde ir à universidade e o filho chegou a primeiro-ministro. "Failed" virou "reprovado", porque se trata de exame, e "falhou" soaria estranho. Explicar o exame por extenso seria mais claro, mas inviável em simultânea.
+
+--------------------------------------------------
+
+25. "circuit breaker" (62:55)
+
+Question: At about 62 minutes 55 seconds, how did you translate "circuit breaker" in "I promised to give Britain a circuit breaker. To get us out of the rut we've been in."? Justify your answer.
+
+Pergunta: Por volta de 62min55s, como você traduziu "circuit breaker" em "I promised to give Britain a circuit breaker. To get us out of the rut we've been in."? Justifique a sua resposta.
+
+Resposta: Traduzi por "um disjuntor". "Circuit breaker" é o dispositivo que interrompe o circuito para impedir a sobrecarga, e aqui é metáfora de uma pausa que rompe um ciclo ruim. "Disjuntor" mantém a imagem elétrica, e o ouvinte brasileiro reconhece a metáfora, também usada no mercado financeiro. Descartei "freio de arrumação", que é só uma expressão coloquial local. "Rut" virou "atoleiro", que traz a ideia de estar preso num lugar de onde é difícil sair.</script>
+
+    <script>
+        // ================= CONFIGURAÇÃO (é só aqui que se mexe) =================
+        const CONFIG = {
+            youtubeId: "gT6b9Opy69E",          // ID do vídeo no YouTube: a parte depois de "v=" no link (ex.: https://www.youtube.com/watch?v=ABCDEFGHIJK -> "ABCDEFGHIJK")
+            mp4Url: "",             // alternativa ao YouTube: link ou caminho de um .mp4 (ex.: "video/burnham.mp4"). Se estiver preenchido, vale mais que o YouTube
+            offsetSeconds: 0        // se o vídeo tiver alguns segundos a mais ou a menos no começo do que o arquivo que foi transcrito, ajuste aqui (positivo = o vídeo começa mais tarde)
+        };
+        // Para testar sem editar o arquivo: ?v=ID_DO_YOUTUBE, ?mp4=URL e ?offset=SEGUNDOS no endereço da página
+        (function () {
+            const qs = new URLSearchParams(location.search);
+            if (qs.get('v')) CONFIG.youtubeId = qs.get('v');
+            if (qs.get('mp4')) CONFIG.mp4Url = qs.get('mp4');
+            if (qs.get('offset') && !isNaN(Number(qs.get('offset')))) CONFIG.offsetSeconds = Number(qs.get('offset'));
+        })();
+
+        const $ = id => document.getElementById(id);
+        const pad = n => String(n).padStart(2, '0');
+        function esc(str) { return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        // Liga/desliga um elemento trocando "hidden" pela classe de exibição que ele usa
+        function show(el, on, disp = 'flex') { if (!el) return; el.classList.toggle('hidden', !on); el.classList.toggle(disp, on); }
+
+        function fmtShort(sec) {
+            sec = Math.max(0, Math.floor(sec));
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+        }
+        function fmtHMS(sec) { sec = Math.max(0, Math.floor(sec)); return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}`; }
+        function parseVideoTime(str) {
+            const m = String(str ?? '').trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})$/);
+            if (!m) return null;
+            const h = m[1] ? Number(m[1]) : 0, mi = Number(m[2]), s = Number(m[3]);
+            if (mi > 59 || s > 59) return null;
+            return h * 3600 + mi * 60 + s;
+        }
+        function prettyName(raw) { return String(raw ?? '').replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1)); }
+        function getAvatarColors(name) {
+            let h = 2166136261;
+            const s = String(name || '').toLowerCase().trim();
+            for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+            h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+            const hue = (h >>> 0) % 360;
+            return { bg: `hsl(${hue}, 70%, 85%)`, text: `hsl(${hue}, 80%, 25%)`, bgD: `hsl(${hue}, 42%, 32%)`, textD: `hsl(${hue}, 80%, 92%)`,
+                     tint: `hsl(${hue}, 80%, 96%)`, tintD: `hsl(${hue}, 24%, 19%)`, accent: `hsl(${hue}, 55%, 62%)`, accentD: `hsl(${hue}, 50%, 60%)` };
+        }
+
+        function showAlert(message, isError = false, durationMs = 4000) {
+            const existing = $('custom-alert');
+            if (existing) existing.remove();
+            const box = document.createElement('div');
+            box.id = 'custom-alert';
+            box.className = `${isError ? 'alert-error ' : ''}fixed bottom-6 right-6 max-w-md ${isError ? 'bg-red-600' : 'bg-slate-900'} text-white text-xs px-5 py-3 rounded-xl shadow-2xl z-50 flex items-center gap-3 transition-all`;
+            const span = document.createElement('span'); span.textContent = message;
+            const close = document.createElement('button');
+            close.className = 'text-slate-400 hover:text-white ml-2 font-bold'; close.textContent = '×';
+            close.addEventListener('click', () => box.remove());
+            box.append(span, close);
+            document.body.appendChild(box);
+            setTimeout(() => { if (document.body.contains(box)) box.remove(); }, durationMs);
+        }
+
+        // ================= Dados =================
+        function parseTranscript(text, label) {
+            const safe = '<root>' + String(text).trim().replace(/^\s*<\?xml[^>]*\?>/, '').replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;') + '</root>';
+            const doc = new DOMParser().parseFromString(safe, 'text/xml');
+            if (doc.querySelector('parsererror')) throw new Error(`A transcrição em ${label} não é um XML válido.`);
+            return Array.from(doc.querySelectorAll('u')).map(u => ({
+                who: (u.getAttribute('who') || '').trim(),
+                start: parseVideoTime(u.getAttribute('video_time')),
+                text: u.textContent.replace(/\s+/g, ' ').trim()
+            })).filter(x => x.start !== null);
+        }
+        // Junta inglês e português turno a turno (os dois XMLs têm os mesmos horários); se algum horário não bater, alinha pelo horário
+        function pairTurns(en, pt) {
+            const same = en.length === pt.length && en.every((e, i) => e.start === pt[i].start);
+            if (same) return { rows: en.map((e, i) => ({ who: e.who, start: e.start, en: e.text, pt: pt[i].text })), same: true };
+            const byTime = new Map();
+            pt.forEach(p => { if (!byTime.has(p.start)) byTime.set(p.start, []); byTime.get(p.start).push(p); });
+            const rows = en.map(e => { const q = byTime.get(e.start); const p = q && q.length ? q.shift() : null; return { who: e.who, start: e.start, en: e.text, pt: p ? p.text : '' }; });
+            byTime.forEach(q => q.forEach(p => rows.push({ who: p.who, start: p.start, en: '', pt: p.text })));
+            rows.sort((a, b) => a.start - b.start);
+            return { rows, same: false };
+        }
+        function parseQuestions(text) {
+            const re = /^[ \t]*(\d+)\.\s+[“"](.+?)[”"]\s+\((\d+):(\d{2})(?::(\d{2}))?\)[ \t]*$/gm;
+            const heads = []; let m;
+            while ((m = re.exec(text)) !== null) heads.push({ n: Number(m[1]), expr: m[2].trim(), a: m[3], b: m[4], c: m[5], from: m.index, to: re.lastIndex });
+            const out = [];
+            heads.forEach((h, i) => {
+                const block = text.slice(h.to, i + 1 < heads.length ? heads[i + 1].from : text.length);
+                const f = /Question:\s*([\s\S]*?)\s*\n\s*Pergunta:\s*([\s\S]*?)\s*\n\s*Resposta:\s*([\s\S]*?)\s*(?:\n\s*[-=]{5,}[\s\S]*)?$/.exec(block);
+                if (!f) return;
+                const t = h.c !== undefined ? Number(h.a) * 3600 + Number(h.b) * 60 + Number(h.c) : Number(h.a) * 60 + Number(h.b);
+                out.push({ n: h.n, expr: h.expr, t, q: f[1].trim(), pt: f[2].trim(), ans: f[3].trim() });
+            });
+            return out;
+        }
+
+        let turns = [], starts = [], questions = [];
+        try {
+            const res = pairTurns(parseTranscript($('data-en').textContent, 'inglês'), parseTranscript($('data-pt').textContent, 'português'));
+            turns = res.rows;
+            if (!res.same) showAlert('As duas transcrições não têm exatamente os mesmos turnos e horários: foram alinhadas pelo horário. Vale conferir.', true, 12000);
+        } catch (err) { showAlert(err.message, true, 15000); }
+        try { questions = parseQuestions($('data-questions').textContent); } catch (err) { showAlert('Não foi possível ler as perguntas.', true, 15000); }
+        starts = turns.map(t => t.start);
+
+        // ================= Player (YouTube ou .mp4) =================
+        const player = {
+            kind: null, yt: null, ready: false, v: null,
+            available() { return this.kind === 'mp4' || (this.kind === 'yt' && this.ready); },
+            getTime() { try { if (this.kind === 'mp4') return this.v.currentTime; if (this.kind === 'yt' && this.ready) return this.yt.getCurrentTime(); } catch (e) {} return null; },
+            seek(t) { if (this.kind === 'mp4') this.v.currentTime = t; else this.yt.seekTo(t, true); },
+            play() { if (this.kind === 'mp4') this.v.play().catch(() => {}); else this.yt.playVideo(); },
+            pause() { if (this.kind === 'mp4') this.v.pause(); else this.yt.pauseVideo(); },
+            isPlaying() { try { if (this.kind === 'mp4') return !this.v.paused && !this.v.ended; if (this.kind === 'yt' && this.ready) return this.yt.getPlayerState() === 1; } catch (e) {} return false; },
+            getRate() { try { if (this.kind === 'mp4') return this.v.playbackRate || 1; if (this.kind === 'yt' && this.ready) return this.yt.getPlaybackRate() || 1; } catch (e) {} return 1; }
+        };
+        function videoMessage(html) { const el = $('video-msg'); el.innerHTML = html; show(el, true); }
+        const YT_ERRORS = {
+            2: 'O ID do vídeo parece inválido.',
+            5: 'O navegador não conseguiu reproduzir este vídeo.',
+            100: 'O vídeo não foi encontrado (apagado ou privado).',
+            101: 'O dono do vídeo não permite que ele seja incorporado em outros sites.',
+            150: 'O dono do vídeo não permite que ele seja incorporado em outros sites.',
+            153: 'O YouTube não aceitou abrir o vídeo aqui. Isso acontece quando a página é aberta direto do computador (file://): publique no GitHub Pages ou abra por um servidor local.'
+        };
+        function loadYouTube() {
+            window.onYouTubeIframeAPIReady = function () {
+                const vars = { rel: 0, playsinline: 1, modestbranding: 1 };
+                if (location.protocol.indexOf('http') === 0) vars.origin = location.origin;
+                player.yt = new YT.Player('yt-host', {
+                    videoId: CONFIG.youtubeId, width: '100%', height: '100%', playerVars: vars,
+                    events: {
+                        onReady: () => { player.ready = true; },
+                        onError: e => videoMessage((YT_ERRORS[e.data] || 'Erro ao carregar o vídeo.') + `<br><br><a href="https://www.youtube.com/watch?v=${encodeURIComponent(CONFIG.youtubeId)}" target="_blank" rel="noopener">Abrir no YouTube</a>`)
+                    }
+                });
+            };
+            const tag = document.createElement('script');
+            tag.src = 'https://www.youtube.com/iframe_api';
+            tag.onerror = () => videoMessage('Não foi possível carregar o player do YouTube. Verifique a conexão com a internet.');
+            document.head.appendChild(tag);
+        }
+        function initPlayer() {
+            if (CONFIG.mp4Url) {
+                player.kind = 'mp4'; player.v = $('html5');
+                show($('yt-host'), false); show(player.v, true, 'block');
+                player.v.addEventListener('error', () => videoMessage('Não foi possível carregar o arquivo de vídeo. Confira o endereço em CONFIG.mp4Url.'));
+                player.v.src = CONFIG.mp4Url;
+            } else if (CONFIG.youtubeId) {
+                player.kind = 'yt'; loadYouTube();
+            } else {
+                videoMessage('Vídeo ainda não configurado.<br>No começo do script deste arquivo, preencha <b>youtubeId</b> em CONFIG<br>(ou use <b>?v=ID</b> no endereço da página).');
+            }
+        }
+
+        // ================= Turnos: qual está tocando, onde termina =================
+        // Devolve [primeiro, último] dos turnos ativos em t (turnos com o mesmo horário contam juntos), ou null antes do primeiro
+        function turnEnd(i) { const s = starts[i]; for (let j = i + 1; j < starts.length; j++) if (starts[j] > s) return starts[j]; return s + 10; }
+        function turnRange(t) {
+            if (!starts.length || t < starts[0]) return null;
+            let a = 0, b = starts.length - 1;
+            while (a < b) { const m = (a + b + 1) >> 1; if (starts[m] <= t) a = m; else b = m - 1; }
+            let lo = a; while (lo > 0 && starts[lo - 1] === starts[a]) lo--;
+            return [lo, a];
+        }
+        const norm = s => String(s ?? '').toLowerCase().replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
+        // O horário das perguntas aponta um pouco antes da expressão: procura a expressão no turno desse horário e nos seguintes.
+        // Devolve { from, idx }: o turno em que ela está (ou, se ela é cortada entre dois turnos, do primeiro ao segundo)
+        function exprTurn(t, expr) {
+            const r = turnRange(t);
+            const first = r ? r[0] : 0;
+            const needle = norm(expr);
+            if (needle) for (let k = first; k < Math.min(turns.length, first + 6); k++) {
+                if (norm(turns[k].en).includes(needle)) return { from: k, idx: k };
+                // expressão cortada entre dois turnos (ex.: "wasn't having" / "it."): vale o turno em que ela termina
+                if (k + 1 < turns.length && !norm(turns[k + 1].en).includes(needle) && norm(turns[k].en + ' ' + turns[k + 1].en).includes(needle)) return { from: k, idx: k + 1 };
+            }
+            return { from: first, idx: first };
+        }
+        // ---- destaque de expressões ----
+        // Padrão que ignora pontuação entre as palavras (vírgulas, aspas, ponto final...) e aceita ' ou ’
+        const SEP = '[\\s,;:.!?\u2026"\u201c\u201d\u2018\u2019\'\u2014\u2013-]+';
+        const patOf = str => String(str).trim().split(/\s+/)
+            .map(w => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter(Boolean)
+            .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/['\u2019]/g, "['\u2019]")).join(SEP);
+        // Acha `str` em `text`. Se `ratio` vier (posição relativa 0..1), entre várias ocorrências escolhe a mais próxima dessa posição
+        function findMatch(text, str, ratio) {
+            let re; try { re = new RegExp(patOf(str), 'gi'); } catch (e) { return null; }
+            let best = null, m;
+            while ((m = re.exec(text)) !== null) {
+                if (m[0] === '') { re.lastIndex++; continue; }
+                if (ratio == null) return m;
+                const d = Math.abs(m.index / Math.max(1, text.length) - ratio);
+                if (!best || d < best.d) best = { m, d };
+            }
+            return best ? best.m : null;
+        }
+        function markRanges(text, ranges) {   // ranges: [[inicio, fim], ...], sem sobreposição
+            let out = '', pos = 0;
+            ranges.slice().sort((a, b) => a[0] - b[0]).forEach(([a, b]) => { out += esc(text.slice(pos, a)) + '<mark class="expr-mark">' + esc(text.slice(a, b)) + '</mark>'; pos = b; });
+            return out + esc(text.slice(pos));
+        }
+        // Gabarito que resume a frase da transcrição (ex.: sem um aparte no meio): destaca o começo e o fim que aparecem no texto
+        function partialRanges(text, str, ratio) {
+            const words = String(str).trim().split(/\s+/);
+            if (words.length < 4) return null;
+            for (let k = words.length - 1; k >= 3; k--) {
+                const m = findMatch(text, words.slice(0, k).join(' '), ratio);
+                if (!m) continue;
+                const end = m.index + m[0].length, rest = words.slice(k), tail = text.slice(end);
+                for (let j = 0; j < rest.length; j++) {
+                    const m2 = findMatch(tail, rest.slice(j).join(' '));
+                    if (m2) return [[m.index, end], [end + m2.index, end + m2.index + m2[0].length]];
+                }
+                return [[m.index, end]];
+            }
+            return null;
+        }
+        const markHTML = (text, m) => esc(text.slice(0, m.index)) + '<mark class="expr-mark">' + esc(m[0]) + '</mark>' + esc(text.slice(m.index + m[0].length));
+        // Expressão cortada entre dois turnos: destaca o fim do primeiro e o começo do segundo (ou null se não achar)
+        function splitHL(a, b, expr) {
+            const words = String(expr).trim().split(/\s+/);
+            for (let k = words.length - 1; k >= 1; k--) {
+                let ma = null, mb = null;
+                try {
+                    ma = new RegExp(patOf(words.slice(0, k).join(' ')) + '(?=[\\s.,;:!?\u2026"\u201d\u2019\']*$)', 'i').exec(a);
+                    mb = new RegExp('^[\\s"\u201c\u2018]*(' + patOf(words.slice(k).join(' ')) + ')', 'i').exec(b);
+                } catch (e) {}
+                if (ma && mb) {
+                    const bi = mb.index + mb[0].length - mb[1].length;
+                    return [
+                        esc(a.slice(0, ma.index)) + '<mark class="expr-mark">' + esc(ma[0]) + '</mark>' + esc(a.slice(ma.index + ma[0].length)),
+                        esc(b.slice(0, bi)) + '<mark class="expr-mark">' + esc(mb[1]) + '</mark>' + esc(b.slice(bi + mb[1].length))
+                    ];
+                }
+            }
+            return null;
+        }
+        // Trechos entre aspas do gabarito, na ordem (o primeiro costuma ser a tradução escolhida)
+        function quotedCandidates(ans) {
+            const out = [], re = /[\u201c"]([^\u201d"]+)[\u201d"]/g; let m;
+            while ((m = re.exec(String(ans))) !== null) {
+                const c = m[1].trim().replace(/[.,;:!?\u2026]+$/, '');
+                if (c && !out.includes(c)) out.push(c);
+            }
+            return out;
+        }
+        // Devolve o HTML dos turnos de from..idx, em inglês e em português, com a expressão (EN) e a tradução do gabarito (PT) destacadas
+        function highlightRange(q, from, idx) {
+            const en = [], pt = [], n = idx - from + 1;
+            for (let k = from; k <= idx; k++) { en.push(turns[k].en); pt.push(turns[k].pt); }
+            let enHtml = en.map(esc), ratio = null;
+            if (n === 1) {
+                const m = findMatch(en[0], q.expr);
+                if (m) { enHtml = [markHTML(en[0], m)]; ratio = m.index / Math.max(1, en[0].length); }
+            } else if (n === 2) {
+                const sp = splitHL(en[0], en[1], q.expr);
+                if (sp) enHtml = sp;
+            }
+            let ptHtml = pt.map(esc);
+            for (const c of quotedCandidates(q.ans)) {
+                let done = false;
+                for (let i = 0; i < n && !done; i++) {
+                    const m = findMatch(pt[i], c, ratio);
+                    if (m) { ptHtml[i] = markHTML(pt[i], m); done = true; }
+                }
+                if (!done && n === 2) { const sp = splitHL(pt[0], pt[1], c); if (sp) { ptHtml = sp; done = true; } }
+                for (let i = 0; i < n && !done; i++) {
+                    const r = partialRanges(pt[i], c, ratio);
+                    if (r) { ptHtml[i] = markRanges(pt[i], r); done = true; }
+                }
+                if (done) break;
+            }
+            return { en: enHtml, pt: ptHtml };
+        }
+
+        // ================= Ir até um ponto do vídeo =================
+        function playFrom(t) {
+            if (!player.available()) { showAlert(player.kind ? 'O vídeo ainda está carregando. Tente de novo em um instante.' : 'O vídeo ainda não foi configurado.', true); return; }
+            player.seek(t + CONFIG.offsetSeconds);
+            player.play();
+        }
+
+        // ================= Transcrições =================
+        let activeKey = null, activeLo = -1, follow = true, mode = 'transcripts';
+        // Um box (inglês ou português) de um turno, na cor do falante
+        function turnBox(t, cls, tag, innerHtml, compact) {
+            const av = getAvatarColors(t.who), name = prettyName(t.who);
+            const head = compact
+                ? `<div class="flex items-center gap-2 mb-2">
+                            <span class="font-bold text-xs text-slate-800 truncate">${esc(name)}</span>
+                            <span class="shrink-0 text-[11px] font-mono text-slate-500 bg-white px-1.5 py-0.5 rounded">${fmtHMS(t.start)}</span>
+                            <span class="ml-auto shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">${tag}</span>
+                        </div>`
+                : null;
+            if (head) return `<div class="box sp ${cls} border border-slate-200 rounded-xl p-3 shadow-sm" style="--sp-bg: ${av.tint}; --sp-bgd: ${av.tintD}; --sp-bd: ${av.accent}; --sp-bdd: ${av.accentD};">${head}<p class="txt text-slate-700 m-0">${innerHtml}</p></div>`;
+            return `<div class="box sp ${cls} border border-slate-200 rounded-xl p-4 shadow-sm" style="--sp-bg: ${av.tint}; --sp-bgd: ${av.tintD}; --sp-bd: ${av.accent}; --sp-bdd: ${av.accentD};">
+                        <div class="flex items-center gap-3 mb-2">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-sm border border-black/5 avatar-dyn" style="background-color: ${av.bg}; color: ${av.text}; --av-bg-d: ${av.bgD}; --av-fg-d: ${av.textD};">${esc(name.charAt(0))}</div>
+                            <span class="font-bold text-sm text-slate-800 truncate">${esc(name)}</span>
+                            <span class="shrink-0 text-xs font-mono text-slate-500 bg-white px-2 py-1 rounded">${fmtHMS(t.start)}</span>
+                            <span class="ml-auto shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">${tag}</span>
+                        </div>
+                        <p class="txt text-slate-700 m-0">${innerHtml}</p>
+                    </div>`;
+        }
+        function buildTranscript() {
+            const head = `<div class="sticky top-0 z-10 bg-slate-50 pt-3 pb-1 px-1"><div class="cols text-[11px] font-bold uppercase tracking-wider text-slate-500"><div class="col-en">English</div><div class="col-pt">Português</div></div></div>`;
+            $('transcript-container').innerHTML = head + turns.map((t, i) => {
+                return `<div class="utterance cols cursor-pointer mb-3" id="turn-${i}" data-i="${i}" data-text="${esc((t.who + ' ' + t.en + ' ' + t.pt).toLowerCase())}">
+                    ${turnBox(t, 'col-en', 'EN', esc(t.en))}
+                    ${turnBox(t, 'col-pt', 'PT', esc(t.pt))}
+                </div>`;
+            }).join('');
+            $('utterance-count').textContent = `${turns.length} turnos`;
+        }
+        function scrollToCard(el, smooth) {
+            if (!el || !el.offsetParent) return;
+            const c = $('transcript-container'), cr = c.getBoundingClientRect(), er = el.getBoundingClientRect();
+            const target = c.scrollTop + (er.top - cr.top) - (c.clientHeight / 2 - er.height / 2);
+            c.scrollTo({ top: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+        }
+        // Rolagem que acompanha a fala, como um teleprompter: a "linha de leitura" anda ao longo de cada turno na mesma proporção
+        // do tempo do turno, e vai de um turno ao outro sem salto (do topo de um box ao topo do próximo). É uma estimativa: supõe
+        // fala em ritmo constante. Para ficar suave, a página usa um relógio próprio, que anda a cada quadro (60 vezes por segundo)
+        // e é corrigido aos poucos pelo tempo do player, que chega só a cada ~0,25 s e em degraus.
+        const clock = { base: 0, at: 0, playing: false, rate: 1, last: null };
+        const estTime = now => clock.base + (clock.playing ? (now - clock.at) / 1000 * clock.rate : 0);
+        let holdUntil = 0, wake = false, pos = null;
+        function focusTarget(t) {
+            const r = turnRange(t);
+            if (!r) return null;
+            const first = $('turn-' + r[0]);
+            if (!first || !first.offsetParent) return null;
+            const c = $('transcript-container'), top = first.offsetTop;
+            let nextTop = null;
+            for (let k = r[1] + 1; k < turns.length; k++) { const e = $('turn-' + k); if (e && e.offsetParent) { nextTop = e.offsetTop; break; } }
+            if (nextTop === null) { const last = $('turn-' + r[1]); nextTop = last.offsetTop + last.offsetHeight; }
+            const start = starts[r[0]], end = turnEnd(r[1]);
+            const p = Math.min(1, Math.max(0, (t - start) / Math.max(1, end - start)));
+            return Math.max(0, top + 40 + p * (nextTop - top) - c.clientHeight * 0.38);
+        }
+        function followSnap() {   // vai direto para a posição atual (sem animação)
+            const vt = clock.last === null ? player.getTime() : estTime(performance.now());
+            const tg = vt == null ? null : focusTarget(vt - CONFIG.offsetSeconds);
+            if (tg != null) { $('transcript-container').scrollTop = tg; pos = null; }
+            else if (activeLo >= 0) scrollToCard($('turn-' + activeLo), false);
+        }
+        (function () {
+            const c = $('transcript-container');
+            // se a pessoa rolar ou selecionar texto por conta própria, a rolagem automática espera um pouco
+            const hold = () => { holdUntil = performance.now() + 6000; pos = null; };
+            ['wheel', 'touchstart', 'pointerdown'].forEach(ev => c.addEventListener(ev, hold, { passive: true }));
+            (function frame(now) {
+                requestAnimationFrame(frame);
+                if (!follow || mode !== 'transcripts' || now < holdUntil || !(clock.playing || wake)) return;
+                const tg = focusTarget(estTime(now) - CONFIG.offsetSeconds);
+                if (tg == null) return;
+                if (pos === null || Math.abs(c.scrollTop - pos) > 2) pos = c.scrollTop;   // outra coisa mexeu na rolagem: recomeça dali
+                const d = tg - pos;
+                pos += d * (Math.abs(d) > 600 ? 0.3 : 0.25);
+                c.scrollTop = pos;
+                if (!clock.playing && Math.abs(tg - pos) < 0.5) wake = false;
+            })(performance.now());
+        })();
+        function updateActive(t) {
+            const r = turnRange(t);
+            const key = r ? r[0] + '-' + r[1] : null;
+            if (key === activeKey) return;
+            activeKey = key; activeLo = -1;
+            document.querySelectorAll('#transcript-container .utterance.active').forEach(e => e.classList.remove('active'));
+            if (!r) return;
+            for (let i = r[0]; i <= r[1]; i++) { const el = $('turn-' + i); if (el) el.classList.add('active'); }
+            activeLo = r[0];
+        }
+        $('transcript-container').addEventListener('click', e => {
+            const card = e.target.closest('.utterance');
+            if (!card) return;
+            if (!player.available()) { showAlert(player.kind ? 'O vídeo ainda está carregando.' : 'O vídeo ainda não foi configurado.', true); return; }
+            holdUntil = 0; wake = true;
+            player.seek(turns[Number(card.dataset.i)].start + CONFIG.offsetSeconds + 0.01);
+            player.play();
+        });
+        $('search-input').addEventListener('input', e => {
+            const q = e.target.value.toLowerCase().trim();
+            let n = 0;
+            document.querySelectorAll('#transcript-container .utterance').forEach(el => {
+                const ok = !q || el.dataset.text.includes(q);
+                el.classList.toggle('hidden', !ok);
+                if (ok) n++;
+            });
+            $('utterance-count').textContent = `${n} turnos`;
+        });
+        const SW_ON = 'text-xs font-semibold px-3 py-1.5 rounded-md bg-white text-indigo-700 shadow-sm';
+        const SW_OFF = 'text-xs font-semibold px-3 py-1.5 rounded-md text-slate-500 hover:text-slate-700';
+        const CB = 'chrome-btn flex items-center gap-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors ';
+        const CB_ON = CB + 'bg-indigo-100 text-indigo-700', CB_OFF = CB + 'text-slate-600 hover:bg-slate-100';
+        function setLang(l) {
+            const c = $('transcript-container');
+            c.classList.remove('lang-both', 'lang-en', 'lang-pt'); c.classList.add('lang-' + l);
+            document.querySelectorAll('#lang-switch button').forEach(b => { b.className = b.dataset.lang === l ? SW_ON : SW_OFF; });
+            followSnap();
+        }
+        $('lang-switch').addEventListener('click', e => { const b = e.target.closest('button[data-lang]'); if (b) setLang(b.dataset.lang); });
+        function paintFollow() {
+            const b = $('follow-btn');
+            b.setAttribute('aria-pressed', String(follow));
+            b.className = 'shrink-0 text-xs font-semibold py-1.5 px-3 rounded-lg border transition-colors whitespace-nowrap shadow-sm ' + (follow ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50');
+        }
+        $('follow-btn').addEventListener('click', () => { follow = !follow; paintFollow(); if (follow) { holdUntil = 0; wake = true; pos = null; } });
+
+        // ================= Perguntas =================
+        let qIdx = 0, qFilter = 'all', qShuffled = false, resetArmed = false;
+        const qOriginal = questions.map((_, i) => i);
+        let qOrder = qOriginal.slice();
+        const revealed = new Set();
+        let ctxOn = false, ctxKey = null;   // trecho da transcrição abaixo do vídeo: liga/desliga e vale para as próximas perguntas
+        const RK = 'translationPracticeRatings:' + CONFIG.youtubeId;
+        let ratings = {};
+        try { ratings = JSON.parse(localStorage.getItem(RK) || '{}') || {}; } catch (e) { ratings = {}; }
+        function saveRatings() { try { localStorage.setItem(RK, JSON.stringify(ratings)); } catch (e) {} }
+        const rateOf = i => ratings[questions[i].n] || null;
+        function matches(i) { const r = rateOf(i); return qFilter === 'all' || (qFilter === 'review' && (r === 'almost' || r === 'miss')) || (qFilter === 'todo' && !r); }
+        const visibleList = () => qOrder.filter(i => i === qIdx || matches(i));
+        // Próxima (dir = 1) ou anterior (dir = -1) pergunta que aparece no filtro atual, na ordem atual
+        function stepFrom(dir) {
+            let p = qOrder.indexOf(qIdx) + dir;
+            while (p >= 0 && p < qOrder.length) { if (matches(qOrder[p])) return qOrder[p]; p += dir; }
+            return null;
+        }
+        const RATE_NAME = { ok: 'acertei', almost: 'quase', miss: 'errei' };
+        const RATE_CLS = {
+            ok: 'bg-emerald-100 text-emerald-800 border-slate-200 hover:bg-emerald-200',
+            almost: 'bg-amber-100 text-amber-800 border-slate-200 hover:bg-amber-200',
+            miss: 'bg-rose-100 text-rose-800 border-slate-200 hover:bg-rose-200'
+        };
+        const DOT = { ok: 'bg-emerald-500', almost: 'bg-amber-400', miss: 'bg-rose-500' };
+        const OPEN_CLS = 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-200';
+        const IDLE_CLS = 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200';
+        const PLAY_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>';
+        function timeBtnInline(label, sec) {
+            return `<button type="button" data-t="${sec}" class="font-semibold text-indigo-700 hover:text-indigo-900 underline decoration-dotted underline-offset-2 cursor-pointer" title="Ouvir o trecho no vídeo">${label}</button>`;
+        }
+        // Transforma "0 minutes 25 seconds" e "0min25s" dentro do texto em botões que tocam o vídeo naquele ponto
+        function withTimeButtons(raw) {
+            return esc(raw)
+                .replace(/(\d+)\s+minutes?\s+(\d+)\s+seconds?/gi, (m, a, b) => timeBtnInline(m, Number(a) * 60 + Number(b)))
+                .replace(/(\d+)\s*min\s*(\d{1,2})\s*s\b/gi, (m, a, b) => timeBtnInline(m, Number(a) * 60 + Number(b)));
+        }
+        const LABEL = 'text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1';
+        function renderNav() {
+            const vis = visibleList();
+            $('q-nav').innerHTML = vis.map(i => {
+                const q = questions[i], cur = i === qIdx, r = rateOf(i), seen = revealed.has(i);
+                const cls = cur ? 'bg-indigo-600 text-white border-indigo-300' : r ? RATE_CLS[r] : seen ? OPEN_CLS : IDLE_CLS;
+                const dot = cur && r ? `<span class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-white ${DOT[r]}"></span>` : '';
+                return `<button type="button" data-q="${i}" class="relative w-8 h-8 rounded-lg text-xs font-bold border transition-colors ${cls}" ${cur ? 'aria-current="true"' : ''} aria-label="Pergunta ${q.n}${r ? ' (' + RATE_NAME[r] + ')' : ''}">${q.n}${dot}</button>`;
+            }).join('');
+            $('q-progress').textContent = `Pergunta ${questions.length ? vis.indexOf(qIdx) + 1 : 0} de ${vis.length}`;
+            $('q-prev').disabled = stepFrom(-1) === null;
+            $('q-next').disabled = stepFrom(1) === null;
+            const c = { ok: 0, almost: 0, miss: 0 };
+            questions.forEach((_, i) => { const r = rateOf(i); if (r) c[r]++; });
+            const todo = questions.length - c.ok - c.almost - c.miss;
+            $('q-stats').innerHTML = `<span><b class="text-emerald-800">${c.ok}</b> acertei &middot; <b class="text-amber-800">${c.almost}</b> quase &middot; <b class="text-rose-800">${c.miss}</b> errei &middot; ${todo} sem avaliação</span>`
+                + (c.ok + c.almost + c.miss ? `<button type="button" id="q-reset" class="underline underline-offset-2 hover:text-slate-700">${resetArmed ? 'Clique de novo para zerar' : 'Zerar avaliações'}</button>` : '');
+            document.querySelectorAll('#q-filter button').forEach(b => { b.className = b.dataset.f === qFilter ? SW_ON : SW_OFF; });
+            $('q-shuffle').textContent = qShuffled ? 'Ordem original' : 'Embaralhar';
+        }
+        function scoreBtn(key, label, cur) {
+            const on = cur === key;
+            const cls = on ? RATE_CLS[key].replace(/ hover:\S+/, '') : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50';
+            return `<button type="button" data-score="${key}" aria-pressed="${on}" class="text-xs font-semibold py-1.5 px-3 rounded-lg border transition-colors shadow-sm ${cls}">${on ? '&check; ' : ''}${label}</button>`;
+        }
+        // Turnos vizinhos para dar contexto: pelo menos um de cada lado e, se forem muito curtos, mais alguns (até 3)
+        function neighborRange(from, idx) {
+            let a = from, b = idx, chars = 0;
+            while (a > 0 && chars < 250 && from - a < 3) { a--; chars += turns[a].en.length; }
+            chars = 0;
+            while (b < turns.length - 1 && chars < 250 && b - idx < 3) { b++; chars += turns[b].en.length; }
+            return [a, b];
+        }
+        function contextHTML(q, showPt) {
+            const ex = exprTurn(q.t, q.expr);
+            const hl = highlightRange(q, ex.from, ex.idx);
+            const [a, b] = neighborRange(ex.from, ex.idx);
+            let rows = '';
+            for (let k = a; k <= b; k++) {
+                const t = turns[k], main = k >= ex.from && k <= ex.idx;
+                const en = main ? hl.en[k - ex.from] : esc(t.en), pt = main ? hl.pt[k - ex.from] : esc(t.pt);
+                const cls = main ? '' : ' ctx-dim';
+                rows += showPt
+                    ? `<div ${main ? 'data-main="1"' : ''} class="cols mb-3${cls}" style="column-gap: .5rem;">${turnBox(t, 'col-en', 'EN', en, true)}${turnBox(t, 'col-pt', 'PT', pt, true)}</div>`
+                    : `<div ${main ? 'data-main="1"' : ''} class="mb-3${cls}">${turnBox(t, 'col-en', 'EN', en, true)}</div>`;
+            }
+            if (!showPt) rows += '<p class="text-[11px] text-slate-500 m-0 mb-2">O português da transcrição aparece aqui quando você abrir o gabarito.</p>';
+            return rows;
+        }
+        // Mostra (ou esconde) o trecho logo abaixo do vídeo, só no modo perguntas.
+        // Antes de abrir o gabarito mostra só o inglês (o português da transcrição entregaria a resposta).
+        function renderCtxPanel() {
+            const q = questions[qIdx];
+            const on = mode === 'questions' && ctxOn && !!q;
+            $('ctx-panel').classList.toggle('open', on);
+            if (!on) { ctxKey = null; return; }
+            const showPt = revealed.has(qIdx), key = qIdx + '|' + showPt;
+            $('ctx-sub').textContent = showPt ? '(expressão e tradução destacadas · turnos vizinhos esmaecidos)' : '(expressão destacada · turnos vizinhos esmaecidos)';
+            if (ctxKey === key) return;   // já está mostrando isto: não perde a rolagem
+            const sameQuestion = ctxKey !== null && ctxKey.split('|')[0] === String(qIdx);
+            ctxKey = key;
+            const body = $('ctx-body'), keep = body.scrollTop;
+            body.innerHTML = contextHTML(q, showPt);
+            if (sameQuestion) { body.scrollTop = keep; return; }   // só abriu/fechou o gabarito: mantém onde estava
+            body.scrollTop = 0;
+            requestAnimationFrame(() => {
+                const mains = body.querySelectorAll('[data-main]');
+                if (!mains.length) return;
+                const top = mains[0].offsetTop, last = mains[mains.length - 1], height = last.offsetTop + last.offsetHeight - top;
+                if (height <= body.clientHeight * 0.8) { body.scrollTop = Math.max(0, top - (body.clientHeight - height) / 2); return; }   // turno curto: centralizado, com os vizinhos em volta
+                const mk = body.querySelector('mark');   // turno longo: a expressão fica mais ou menos no primeiro terço
+                body.scrollTop = Math.max(0, (mk ? mk.offsetTop : top) - body.clientHeight / 3);
+            });
+        }
+        function renderQuestion(keepScroll) {
+            const body = $('q-body'), prevTop = body.scrollTop;
+            const q = questions[qIdx];
+            if (!q) { body.innerHTML = '<p class="text-sm text-slate-500 text-center mt-10">Nenhuma pergunta carregada.</p>'; return; }
+            const open = revealed.has(qIdx), cur = rateOf(qIdx), ctx = ctxOn;
+            body.innerHTML = `
+                <div class="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center gap-3 mb-5">
+                        <span class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">${q.n}</span>
+                        <span class="font-semibold text-[15px] text-slate-800">&ldquo;${esc(q.expr)}&rdquo;</span>
+                        <button type="button" data-t="${q.t}" class="inline-flex items-center gap-1.5 font-mono text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-300 px-2.5 py-1 rounded-lg font-semibold shadow-sm" title="Ir para este ponto do vídeo">${PLAY_ICON}${fmtShort(q.t)}</button>
+                    </div>
+                    <div class="${LABEL}">Question</div>
+                    <p class="txt text-slate-700 m-0">${withTimeButtons(q.q)}</p>
+                    <div class="mt-6 flex flex-wrap items-center gap-3">
+                        <button id="reveal-btn" type="button" class="${open ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-indigo-600 hover:bg-indigo-700 text-white'} font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors shadow-sm">${open ? 'Esconder tradução e resposta' : 'Mostrar tradução e resposta'}</button>
+                        <button id="ctx-btn" type="button" aria-expanded="${ctx}" class="text-xs font-semibold py-1.5 px-3 rounded-lg border transition-colors shadow-sm bg-white text-indigo-700 border-indigo-300 hover:bg-indigo-50">${ctx ? 'Esconder trecho' : 'Ver trecho da transcrição'}</button>
+                        ${open ? '' : '<span class="text-xs text-slate-500">Pense na sua resposta antes de abrir.</span>'}
+                    </div>
+                    ${open ? `<div class="mt-5 bg-indigo-50 border border-indigo-200 rounded-xl p-5">
+                        <div class="${LABEL}">Pergunta</div>
+                        <p class="txt text-slate-700 m-0">${withTimeButtons(q.pt)}</p>
+                        <div class="${LABEL} mt-4">Resposta</div>
+                        <p class="txt text-slate-700 m-0">${esc(q.ans)}</p>
+                    </div>
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                        <span class="text-xs font-semibold text-slate-500 mr-1">Como foi a sua resposta?</span>
+                        ${scoreBtn('ok', 'Acertei', cur)}${scoreBtn('almost', 'Quase', cur)}${scoreBtn('miss', 'Errei', cur)}
+                    </div>
+                    ` : ''}
+                </div>`;
+            body.scrollTop = keepScroll ? prevTop : 0;
+            renderCtxPanel();
+        }
+        function gotoQuestion(i) {
+            if (i === null || i < 0 || i >= questions.length) return;
+            qIdx = i; renderNav(); renderQuestion(false);
+        }
+        $('q-nav').addEventListener('click', e => { const b = e.target.closest('button[data-q]'); if (b) gotoQuestion(Number(b.dataset.q)); });
+        $('q-prev').addEventListener('click', () => gotoQuestion(stepFrom(-1)));
+        $('q-next').addEventListener('click', () => gotoQuestion(stepFrom(1)));
+        $('q-filter').addEventListener('click', e => {
+            const b = e.target.closest('button[data-f]');
+            if (!b) return;
+            qFilter = b.dataset.f;
+            if (!matches(qIdx)) {
+                const first = qOrder.find(matches);
+                if (first !== undefined) { gotoQuestion(first); return; }
+                showAlert('Nenhuma pergunta nesse filtro por enquanto.');
+            }
+            renderNav();
+        });
+        $('q-shuffle').addEventListener('click', () => {
+            qShuffled = !qShuffled;
+            qOrder = qOriginal.slice();
+            if (qShuffled) for (let i = qOrder.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [qOrder[i], qOrder[j]] = [qOrder[j], qOrder[i]]; }
+            const first = qOrder.find(matches);
+            gotoQuestion(first !== undefined ? first : qIdx);
+        });
+        let resetTimer = null;
+        $('q-stats').addEventListener('click', e => {
+            if (!e.target.closest('#q-reset')) return;
+            if (!resetArmed) { resetArmed = true; clearTimeout(resetTimer); resetTimer = setTimeout(() => { resetArmed = false; renderNav(); }, 3000); renderNav(); return; }
+            resetArmed = false; clearTimeout(resetTimer); ratings = {}; saveRatings(); renderNav(); renderQuestion(true);
+        });
+        $('ctx-close').addEventListener('click', () => { ctxOn = false; renderQuestion(true); });
+        $('q-body').addEventListener('click', e => {
+            const tb = e.target.closest('[data-t]');
+            if (tb) { playFrom(Number(tb.dataset.t)); return; }
+            const sb = e.target.closest('[data-score]');
+            if (sb) {
+                const q = questions[qIdx], v = sb.dataset.score;
+                if (ratings[q.n] === v) delete ratings[q.n]; else ratings[q.n] = v;
+                saveRatings(); renderNav(); renderQuestion(true); return;
+            }
+            if (e.target.closest('#ctx-btn')) {
+                ctxOn = !ctxOn; renderQuestion(true); return;
+            }
+            if (e.target.closest('#reveal-btn')) {
+                if (revealed.has(qIdx)) revealed.delete(qIdx); else revealed.add(qIdx);
+                renderNav(); renderQuestion(true);
+            }
+        });
+        document.addEventListener('keydown', e => {
+            if (mode !== 'questions' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ''))) return;
+            if (e.key === 'ArrowRight') gotoQuestion(stepFrom(1));
+            else if (e.key === 'ArrowLeft') gotoQuestion(stepFrom(-1));
+        });
+
+        // ================= Modo (transcrições / perguntas) =================
+        const MODES = ['transcripts', 'video', 'questions'];
+        function setMode(m) {
+            mode = m;
+            $('main').dataset.mode = m; document.body.dataset.mode = m;
+            show($('view-transcripts'), m === 'transcripts'); show($('view-questions'), m === 'questions'); show($('panel'), m !== 'video');
+            renderCtxPanel();
+            MODES.forEach(k => { const b = $('mode-' + k); b.className = k === m ? CB_ON : CB_OFF; b.setAttribute('aria-pressed', String(k === m)); });
+            if (m === 'transcripts') requestAnimationFrame(followSnap);
+        }
+        MODES.forEach(k => $('mode-' + k).addEventListener('click', () => setMode(k)));
+
+        // ================= Tamanho da letra =================
+        const FS = [0.85, 1, 1.15, 1.3, 1.5];   // limites: nenhum tamanho quebra o layout
+        let fsI = 1;
+        try { const sv = parseInt(localStorage.getItem('translationPracticeFont'), 10); if (sv >= 0 && sv < FS.length) fsI = sv; } catch (e) {}
+        function paintFs(keep) {
+            document.documentElement.style.setProperty('--fs', String(FS[fsI]));
+            document.querySelectorAll('.fs-down').forEach(b => { b.disabled = fsI <= 0; });
+            document.querySelectorAll('.fs-up').forEach(b => { b.disabled = fsI >= FS.length - 1; });
+            try { localStorage.setItem('translationPracticeFont', String(fsI)); } catch (e) {}
+            if (keep && mode === 'transcripts') requestAnimationFrame(followSnap);
+        }
+        document.querySelectorAll('.fs-down').forEach(b => b.addEventListener('click', () => { if (fsI > 0) { fsI--; paintFs(true); } }));
+        document.querySelectorAll('.fs-up').forEach(b => b.addEventListener('click', () => { if (fsI < FS.length - 1) { fsI++; paintFs(true); } }));
+        paintFs(false);
+
+        // ================= Tamanho do vídeo (barra arrastável) =================
+        (function () {
+            const sp = $('splitter'), box = $('video-box'), KEY = 'translationPracticeVideoH';
+            const clampH = h => Math.max(120, Math.min(h, window.innerHeight * 0.7));
+            const apply = h => document.documentElement.style.setProperty('--vh', clampH(h) + 'px');
+            try { const saved = parseFloat(localStorage.getItem(KEY)); if (saved > 0) apply(saved); } catch (e) {}
+            const save = () => { try { localStorage.setItem(KEY, String(Math.round(box.getBoundingClientRect().height))); } catch (e) {} };
+            let startY = 0, startH = 0;
+            sp.addEventListener('pointerdown', e => {
+                startY = e.clientY; startH = box.getBoundingClientRect().height;
+                sp.setPointerCapture(e.pointerId); sp.classList.add('dragging'); e.preventDefault();
+            });
+            sp.addEventListener('pointermove', e => { if (sp.classList.contains('dragging')) apply(startH + (e.clientY - startY)); });
+            const end = () => { if (!sp.classList.contains('dragging')) return; sp.classList.remove('dragging'); save(); };
+            sp.addEventListener('pointerup', end); sp.addEventListener('pointercancel', end);
+            sp.addEventListener('dblclick', () => { document.documentElement.style.removeProperty('--vh'); try { localStorage.removeItem(KEY); } catch (e) {} });
+            sp.addEventListener('keydown', e => {
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                e.preventDefault(); apply(box.getBoundingClientRect().height + (e.key === 'ArrowDown' ? 30 : -30)); save();
+            });
+        })();
+
+        // ================= Vídeo: botões e o relógio que move tudo junto =================
+        $('skip-back-btn').addEventListener('click', () => { const t = player.getTime(); if (t != null) player.seek(Math.max(0, t - 5)); });
+        $('skip-forward-btn').addEventListener('click', () => { const t = player.getTime(); if (t != null) player.seek(t + 5); });
+        function tick() {
+            const vt = player.getTime();
+            if (vt == null) return;
+            const now = performance.now(), est = estTime(now), playing = player.isPlaying();
+            const jumped = clock.last === null || Math.abs(vt - est) > 0.8;   // primeira leitura ou pulo no vídeo
+            clock.base = jumped || !playing ? vt : est + (vt - est) * 0.3;     // tocando: corrige aos poucos, sem soluços
+            clock.at = now; clock.playing = playing; clock.rate = player.getRate(); clock.last = vt;
+            updateActive(vt - CONFIG.offsetSeconds);
+            if (jumped) { holdUntil = 0; wake = true; }
+        }
+        setInterval(tick, 200);
+
+        // ================= Tema escuro =================
+        (function () {
+            const KEY = 'translationPracticeTheme';
+            const root = document.documentElement, btn = $('theme-btn');
+            const mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+            const hasSaved = () => { try { return !!localStorage.getItem(KEY); } catch (e) { return false; } };
+            function paint() {
+                const dark = root.classList.contains('dark');
+                const label = dark ? 'Mudar para o modo claro' : 'Mudar para o modo escuro';
+                btn.setAttribute('aria-pressed', String(dark)); btn.setAttribute('aria-label', label); btn.title = label;
+                $('theme-label').textContent = dark ? 'Modo claro' : 'Modo escuro';
+            }
+            btn.addEventListener('click', () => {
+                const dark = !root.classList.contains('dark');
+                root.classList.toggle('dark', dark);
+                try { localStorage.setItem(KEY, dark ? 'dark' : 'light'); } catch (e) {}
+                paint();
+            });
+            if (mq) {
+                const follow = e => { if (!hasSaved()) { root.classList.toggle('dark', e.matches); paint(); } };
+                if (mq.addEventListener) mq.addEventListener('change', follow); else if (mq.addListener) mq.addListener(follow);
+            }
+            paint();
+        })();
+
+        // ================= Início =================
+        buildTranscript(); paintFollow();
+        renderNav(); renderQuestion(false);
+        setMode('transcripts');
+        initPlayer();
+
+        if (typeof tailwind === 'undefined') showAlert('O arquivo de estilo (tailwind.js) não foi encontrado e não há internet para buscá-lo: a página vai aparecer sem o layout.', true, 600000);
+    </script>
+</body>
+</html>
